@@ -2,7 +2,7 @@ const pool = require('./db');
 
 async function initServer() {
   try {
-    console.log(' Connecting to database...');
+    console.log('⏳ Connecting to database...');
     
     await pool.query('SELECT 1');
     console.log('Connected to community_wallet database on Supabase');
