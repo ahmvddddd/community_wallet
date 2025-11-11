@@ -1,12 +1,17 @@
 const Joi = require('joi');
 
-const emailSchema = Joi.string().trim().lowercase().email().max(254).required()
+const emailSchema = Joi.string()
+  .trim()
+  .lowercase()
+  .email()
+  .max(254)
+  .required()
   .messages({
     'string.empty': 'Email cannot be empty',
     'string.email': 'Please enter a valid email address',
     'any.required': 'Email is required',
   });
-  
+
 const nameSchema = Joi.string()
   .trim()
   .max(100)
@@ -29,33 +34,33 @@ const passwordSchema = Joi.string()
     'any.required': 'Password is required',
   });
 
-  const registerSchema = Joi.object({
-    email: emailSchema,
-    name: nameSchema,
-    password: passwordSchema
-  });
+const registerSchema = Joi.object({
+  email: emailSchema,
+  name: nameSchema,
+  password: passwordSchema
+});
 
-  const loginSchema = Joi.object({
-    email: emailSchema,
-    password: Joi.string().required(),
-  });
+const loginSchema = Joi.object({
+  email: emailSchema,
+  password: Joi.string().required(),
+});
 
-  function validate(schema) {
-    return (req,res, next) => {
-        const source = req.body || {};
-        const { error, value } = schema.validate(source, { abortEarly: false, stripUnknown: true });
-        if (error) {
-            const details = error.details.map(d => ({ message: d.message, path: d.path }));
-            return res.status(400).json({ error: 'Validation failed', details });
-        }
-
-        req.body = value;
-        next();
+function validate(schema) {
+  return (req, res, next) => {
+    const source = req.body || {};
+    const { error, value } = schema.validate(source, { abortEarly: false, stripUnknown: true });
+    if (error) {
+      const details = error.details.map(d => ({ message: d.message, path: d.path }));
+      return res.status(400).json({ error: 'Validation failed', details });
     }
-  };
 
-module.exports = { 
-  validateRegister: validate(registerSchema), 
+    req.body = value;
+    next();
+  }
+};
+
+module.exports = {
+  validateRegister: validate(registerSchema),
   validateLogin: validate(loginSchema),
   schemas: { registerSchema, loginSchema },
- };
+};
