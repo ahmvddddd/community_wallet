@@ -3,7 +3,7 @@ const { newShareToken } = require('../../utils/shareToken');
 
 exports.enableOrRotate = async (req, res) => {
   const { group_id } = req.params;
-  // require OWNER or TREASURER
+  
   const role = await pool.query(
     `SELECT role_in_group FROM group_membership WHERE group_id=$1 AND user_id=$2`,
     [group_id, req.user.id]
