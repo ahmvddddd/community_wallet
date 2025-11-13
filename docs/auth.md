@@ -332,6 +332,22 @@ PORT=3000
 4. Logout (current) or Logout-all (revoke all devices).
 
 
+### Public Read Token (Group-level)
+- Owner/Treasurer can enable or rotate a public_read_token.
+- Anyone with the token can fetch read-only metrics:
 
+```
+
+GET /api/public/groups/:group_id/balance?token=...  
+GET /api/public/groups/:group_id/contributions?token=... 
+
+``` 
+
+```
+
+Rotate:  POST /api/share/:group_id/share/enable   (auth required)  
+Disable: POST /api/share/:group_id/share/disable  (auth required)
+
+```
 
 ---
