@@ -164,5 +164,10 @@ JSON
 
 ```
 
+---
+
+## Note
+
+In Flutterwave sandbox, virtual-account creation always returns the same test account_number. This causes duplicate-key errors on account.virtual_account_number and gets logged into va_recovery. This is a sandbox-only behaviour and is expected.
 
 ---
