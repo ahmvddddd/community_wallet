@@ -1,4 +1,4 @@
-# 📘 Create Static Virtual Account
+# Create Static Virtual Account
 
 ---
 
@@ -161,10 +161,8 @@ JSON
   "status": "error",
   "message": "Internal server error"
 }
+
 ```
 
-When this happens, the system logs:
-
-tx_ref,, group_id,raw_payload, error message, into va_recovery for debugging and replay capability.
 
 ---
