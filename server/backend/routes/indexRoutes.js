@@ -7,10 +7,11 @@ const paymentRoutes = require('./transaction/paymentRoutes');
 const publicGroupRoutes = require('./group/publicGroupRoutes');
 const shareRoutes = require('./group/shareRoutes');
 const accountRoutes = require('./transaction/createAccountRoutes');
+const transactionPinRoutes = require('./transaction/transactionPinRoutes');
 
 router.use('/groups', groupRoutes);
 router.use('/auth', authRoutes);
-router.use('/transactions', paymentRoutes);
+router.use('/transactions', paymentRoutes, transactionPinRoutes);
 router.use('/public-group', publicGroupRoutes);
 router.use('/share-routes', shareRoutes);
 router.use('/account', accountRoutes);

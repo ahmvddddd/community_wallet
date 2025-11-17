@@ -1,4 +1,3 @@
-// controllers/auth/auth.js (1/5)
 const pool = require('../../db/db');
 const argon2 = require('argon2');
 const { signAccess } = require('./tokens');
@@ -45,7 +44,7 @@ exports.register = async (req, res) => {
   }
 };
 
-// LOGIN
+
 exports.login = async (req, res) => {
 
   const client = await pool.connect();
