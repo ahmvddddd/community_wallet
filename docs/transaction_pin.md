@@ -4,7 +4,7 @@ This document explains the logic, flow, validation rules, error responses, and d
 
 ---
 
-# Features
+## Features
 - Create a secure **4-digit transaction PIN**
 - Validate the PIN before performing sensitive actions
 - Reset the PIN **using a recovery token**
@@ -119,7 +119,7 @@ Bearer Token
 6. Update the record in transaction_pins.
 
 
-## Authorization: 
+### Authorization: 
 
 Bearer Token
 
