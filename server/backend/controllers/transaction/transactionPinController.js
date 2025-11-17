@@ -62,7 +62,13 @@ exports.createTransactionPin = async (req, res) => {
 
 
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        if (error.code === '23505') {
+            return res.status(409).json({
+                message: 'You already have a transaction PIN. Please use reset PIN instead.',
+            });
+        }
+
+        return res.status(500).json({ message: 'Server error creating transaction PIN' });
     }
 };
 
