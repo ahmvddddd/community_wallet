@@ -145,3 +145,17 @@ Bearer Token
 
 
 ---
+
+## Note
+
+1. `validateTransactionPin({ pin, userId })` will mainly be used inside flows like withdrawals, not exposed to the public as a separate “screen” on its own.
+
+
+
+2. The table already has `failed_attempts` and `locked_until`, so in a future pass we can:
+
+increment failed_attempts on wrong PIN,
+
+lock the PIN temporarily after 3–5 bad tries,
+
+and reset the counter on a successful PIN.

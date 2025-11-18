@@ -143,3 +143,17 @@ GROUP BY le.group_id, le.user_id;
 
 -- *Add one more practical index*
 CREATE INDEX idx_account_group ON account(group_id);
+
+
+-- *Create transaction_pins table*
+CREATE TABLE IF NOT EXISTS transaction_pins (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  pin_hash TEXT NOT NULL,
+  recovery_token_hash TEXT NOT NULL,
+  failed_attempts INT NOT NULL DEFAULT 0,
+  locked_until TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP NOT NULL DEFAULT now(),
+  UNIQUE (user_id)
+);
