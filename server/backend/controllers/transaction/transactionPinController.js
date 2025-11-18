@@ -72,30 +72,28 @@ exports.createTransactionPin = async (req, res) => {
     }
 };
 
-
-exports.validateTransactionPin = async (req, res) => {
+exports.validateTransactionPin = async ({ pin, userId }) => {
     try {
-        const { pin } = req.body;
-        const userId = req.user.id;
-
         const pinHash = await getTransactionPinHashByUserId(userId);
 
         if (!pinHash) {
-            return res.status(401).json({ message: 'Invalid PIN' });
+            throw new Error('Invalid PIN');
         }
 
         const isValid = await argon2.verify(pinHash, pin);
 
         if (!isValid) {
-            return res.status(401).json({ message: 'Incorrect PIN' });
+            throw new Error('Incorrect PIN');
         }
 
-        res.status(200).json({ message: 'PIN is valid.' });
+        return true;
 
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        throw new Error(`PIN validation failed: ${error.message}`);
     }
 };
+
+
 
 exports.resetTransactionPin = async (req, res) => {
     try {
