@@ -8,7 +8,7 @@ const publicGroupRoutes = require('./group/publicGroupRoutes');
 const shareRoutes = require('./group/shareRoutes');
 const accountRoutes = require('./transaction/createAccountRoutes');
 const transactionPinRoutes = require('./transaction/transactionPinRoutes');
-const withdrawalRoutes = require('./transaction/withdrawalRequestRoutes');
+const withdrawalRoutes = require('./transaction/withdrawalRoutes');
 
 router.use('/groups', groupRoutes);
 router.use('/auth', authRoutes);
