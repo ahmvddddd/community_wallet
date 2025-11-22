@@ -20,3 +20,4 @@ router.use('/account', accountRoutes);
 router.use('/payout', payoutRoutes);
 
 module.exports = router;
+
