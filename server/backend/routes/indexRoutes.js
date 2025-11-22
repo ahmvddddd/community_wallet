@@ -9,6 +9,7 @@ const shareRoutes = require('./group/shareRoutes');
 const accountRoutes = require('./transaction/createAccountRoutes');
 const transactionPinRoutes = require('./transaction/transactionPinRoutes');
 const withdrawalRoutes = require('./transaction/withdrawalRoutes');
+const payoutRoutes = require('./transaction/payoutRoutes');
 
 router.use('/groups', groupRoutes);
 router.use('/auth', authRoutes);
@@ -16,5 +17,6 @@ router.use('/transactions', paymentRoutes, transactionPinRoutes, withdrawalRoute
 router.use('/public-group', publicGroupRoutes);
 router.use('/share-routes', shareRoutes);
 router.use('/account', accountRoutes);
+router.use('/payout', payoutRoutes);
 
 module.exports = router;

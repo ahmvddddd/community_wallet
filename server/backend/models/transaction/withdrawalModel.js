@@ -72,7 +72,7 @@ exports.updateWithdrawalStatusToApproved = async (withdrawalId) => {
 exports.updateWithdrawalStatusToRejected = async (withdrawalId) => {
     const q = `
         UPDATE withdrawal_request
-        SET status = 'REJECTED'
+        SET status = 'DECLINED'
         WHERE id = $1 AND status = 'PENDING'
         RETURNING id, group_id, status;
     `;

@@ -12,6 +12,7 @@
   "dependencies": {
     "argon2": "^0.44.0",
     "axios": "^1.13.2",
+    "axios-retry": "^4.5.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dayjs": "^1.11.19",
