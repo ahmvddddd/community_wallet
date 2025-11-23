@@ -1,254 +1,243 @@
-# DB SCHEMA
+# Database Schema Documentation
+
+This document provides a clear overview of the core database tables used in the Community Wallet MVP.  
+It describes table purpose, key fields, constraints, and important behavioural notes so future updates do not break security or business rules.
+
+---
+
+## 1. USER MODULE
+
+### **Table: user**
+Holds core authentication identity for all users.
+
+| Field | Type | Notes |
+|------|------|-------|
+| id | UUID (PK) | Primary user identifier |
+| email | text, unique | Login credential |
+| password_hash | text | Argon2 hashed password |
+| name | text | Display name |
+| created_at | timestamp | Auto-generated |
+
+**Important:**
+- Passwords are never stored in plain text.
+- Email must remain unique per user.
+
+---
+
+### **Table: user_activity_log**
+Tracks authentication and behavioural events for audit and security.
+
+| Field | Notes |
+|-------|-------|
+| user_id | FK → user.id |
+| event | Login, logout, PIN reset etc |
+| ip_address | Optional |
+| device_info | Optional |
+| created_at | Timestamp |
+
+---
+
+### **Table: refresh_tokens**
+Stores hashed refresh tokens for multi-device login.
+
+**Important rules:**
+- Only store **token_hash**, never the raw token.
+- `revoked` and `replaced_by` support session invalidation.
+
+---
+
+### **Table: transaction_pins**
+Stores encrypted user PIN metadata.
+
+| Field | Notes |
+|-------|-------|
+| user_id | UNIQUE FK → user.id (one PIN per user) |
+| pin_hash | Argon2id hash |
+| recovery_token_hash | Argon2id hash |
+| failed_attempts | Supports lockout rules |
+| locked_until | Optional |
+| updated_at | Auto-updated |
+
+**Behaviour:**
+- Creating a second PIN for the same user will fail via UNIQUE constraint.
+- PIN never stored raw, only Argon2 hash.
+
+---
+
+## 2. GROUPS & MEMBERSHIP
+
+### **Table: group**
+Represents a savings group / community wallet.
+
+| Field | Notes |
+|-------|-------|
+| id | UUID |
+| name | Group name |
+| description | Optional |
+| rule_template | Default approval rule |
+| approvals_required | Min number for approval (default 2) |
+| approvals_cap | Max approvers allowed |
+| created_by | FK → user.id |
+| public_read_token | Optional token for public dashboards |
+
+---
+
+### **Table: group_membership**
+Defines user roles inside a group.
+
+| Field | Notes |
+|-------|-------|
+| group_id | FK → group.id |
+| user_id | FK → user.id |
+| role_in_group | OWNER, TREASURER, MEMBER |
+| joined_at | Timestamp |
+
+**Rules:**
+- OWNER and TREASURER roles are the only ones allowed to approve or execute withdrawals.
+
+---
+
+## 3. WITHDRAWALS
+
+### **Table: withdrawal_request**
+Represents a withdrawal initiated by a group member.
+
+| Field | Notes |
+|-------|-------|
+| group_id | FK |
+| amount_kobo | Integer, >0 |
+| beneficiary | JSONB (account_name, bank_name, **encrypted** account_number) |
+| reason | Optional |
+| status | PENDING, APPROVED, DECLINED, PAID |
+| requested_by | FK → user.id |
+| executed_at | Timestamp when payout succeeds |
+
+**Important behaviour:**
+- Status transitions: `PENDING → APPROVED → PAID` or `PENDING → DECLINED`.
+- Row is locked (`FOR UPDATE`) during payout execution.
+
+---
+
+## 4. VIRTUAL ACCOUNTS
+
+### **Table: account**
+Stores a static virtual account assigned to a group.
+
+| Field | Notes |
+|-------|-------|
+| virtual_account_number | **Encrypted** string |
+| provider_ref | Flutterwave reference |
+| provider | flutterwave or other |
+| bank_name | Default = Wema Bank |
+| status | pending, active, failed |
+
+**Notes:**
+- Only the encrypted version of the account number is stored.
+- Raw provider payload is kept in account_metadata.
+
+---
+
+### **Table: account_metadata**
+Stores raw provider metadata for audit/debug.
+
+---
+
+## 5. LEDGER
+
+### **Table: ledger_entry**
+Canonical record of credits and debits per group account.
+
+| Field | Notes |
+|-------|-------|
+| type | CREDIT or DEBIT |
+| amount_kobo | Non-negative |
+| reference | Unique (prevents duplicate posting) |
+| simulated | True if sandbox/provider demo |
+| payment_channel | VA, payout, provider_sandbox |
+| rule_status | VALID or flagged |
+
+**Important:**
+- Every payout creates a DEBIT ledger entry.
+- Preventing double-ledger entries relies on `reference` UNIQUE constraint.
+
+---
+
+## 6. PAYOUTS
+
+### **Table: payout**
+Stores results of payout attempts.
+
+| Field | Notes |
+|-------|-------|
+| withdrawal_id | FK |
+| status | PENDING, SUCCESS, FAILED |
+| provider_payload | Raw provider response |
+| beneficiary | JSONB |
+
+---
+
+### **Table: payout_recovery**
+Captures failed payout attempts for retry.
+
+| Field | Notes |
+|--------|-------|
+| withdrawal_id | FK |
+| attempted_payload | JSONB |
+| error_message | Provider message |
+
+---
+
+## 7. APPROVALS
+
+### **Table: approval**
+Stores each approval action for a withdrawal.
+
+| Field | Notes |
+|-------|-------|
+| withdrawal_id | FK |
+| approver_user_id | FK |
+| created_at | Timestamp |
+
+**Rules:**
+- UNIQUE constraint (withdrawal_id, approver_user_id) applied at model level.
+- Prevents double-approvals.
+
+---
+
+## 8. WEBHOOK EVENTS
+
+Stores raw provider webhook events for replay and audit.
+
+---
+
+## 9. VIRTUAL ACCOUNT REQUESTS & RECOVERY
+
+### **Table: va_request**
+Tracks provider virtual account creation requests.
+
+### **Table: va_recovery**
+Stores unmatched or failed VA creation attempts.  
+This supports retry logic, **not exposed to UI**.
+
+---
+
+## Encryption Notes
+
+- All sensitive data must use **app-level AES-256-GCM encryption** via `cryptoHelper.js`.
+- Never store plaintext account numbers or sensitive identifiers.
+- Decryption only happens at the moment it is required.
+
+---
+
+## Future Enhancements (post-MVP)
+- PostgreSQL RLS policies.
+- Event-sourced ledger entries.
+- Rotating encryption keys with key versioning.
+- Provider-specific subaccount storage.
+
+---
+
+_End of document._
 
 
-```
-
--- Enable extensions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-------------------------------------------------------------
--- 1. USER TABLES (foundation)
-------------------------------------------------------------
-CREATE TABLE public."user" (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  email text NOT NULL UNIQUE,
-  password_hash text NOT NULL,
-  name text NOT NULL,
-  created_at timestamp without time zone NOT NULL DEFAULT now()
-);
-
-CREATE TABLE public.user_activity_log (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id uuid NOT NULL,
-  event text NOT NULL,
-  ip_address text,
-  device_info text,
-  created_at timestamp without time zone DEFAULT now(),
-  CONSTRAINT user_activity_log_user_id_fkey FOREIGN KEY (user_id)
-    REFERENCES public."user"(id)
-);
-
-CREATE TABLE public.refresh_tokens (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id uuid NOT NULL,
-  token_hash text NOT NULL,
-  device_info text,
-  ip_address text,
-  created_at timestamp with time zone DEFAULT now(),
-  expires_at timestamp with time zone,
-  revoked boolean DEFAULT false,
-  replaced_by uuid,
-  CONSTRAINT refresh_tokens_user_id_fkey FOREIGN KEY (user_id)
-    REFERENCES public."user"(id)
-);
-
-CREATE TABLE public.transaction_pins (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id uuid NOT NULL UNIQUE,
-  pin_hash text NOT NULL,
-  recovery_token_hash text NOT NULL,
-  failed_attempts integer NOT NULL DEFAULT 0,
-  locked_until timestamp without time zone,
-  created_at timestamp without time zone NOT NULL DEFAULT now(),
-  updated_at timestamp without time zone NOT NULL DEFAULT now(),
-  CONSTRAINT transaction_pins_user_id_fkey FOREIGN KEY (user_id)
-    REFERENCES public."user"(id)
-);
-
-------------------------------------------------------------
--- 2. GROUPS & MEMBERSHIPS
-------------------------------------------------------------
-CREATE TABLE public."group" (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name text NOT NULL,
-  description text,
-  rule_template text DEFAULT 'two_officer',
-  approvals_required integer DEFAULT 2 CHECK (approvals_required >= 1),
-  approvals_cap integer DEFAULT 3,
-  created_by uuid NOT NULL,
-  created_at timestamp without time zone NOT NULL DEFAULT now(),
-  public_read_token text UNIQUE,
-  CONSTRAINT group_created_by_fkey FOREIGN KEY (created_by)
-    REFERENCES public."user"(id)
-);
-
-CREATE TABLE public.group_membership (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  group_id uuid NOT NULL,
-  user_id uuid NOT NULL,
-  role_in_group text NOT NULL CHECK (
-    role_in_group = ANY (ARRAY['OWNER', 'TREASURER', 'MEMBER'])
-  ),
-  joined_at timestamp without time zone NOT NULL DEFAULT now(),
-  CONSTRAINT group_membership_group_id_fkey FOREIGN KEY (group_id)
-    REFERENCES public."group"(id),
-  CONSTRAINT group_membership_user_id_fkey FOREIGN KEY (user_id)
-    REFERENCES public."user"(id)
-);
-
-------------------------------------------------------------
--- 3. WITHDRAWALS & DEPENDENCIES
-------------------------------------------------------------
-CREATE TABLE public.withdrawal_request (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  group_id uuid NOT NULL,
-  amount_kobo integer NOT NULL CHECK (amount_kobo > 0),
-  beneficiary jsonb NOT NULL,
-  reason text,
-  status text NOT NULL DEFAULT 'PENDING'
-    CHECK (status = ANY (ARRAY['PENDING','APPROVED','DECLINED','PAID'])),
-  requested_by uuid NOT NULL,
-  expires_at timestamp without time zone,
-  created_at timestamp without time zone NOT NULL DEFAULT now(),
-  executed_at timestamp with time zone,
-  CONSTRAINT withdrawal_request_group_id_fkey FOREIGN KEY (group_id)
-    REFERENCES public."group"(id),
-  CONSTRAINT withdrawal_request_requested_by_fkey FOREIGN KEY (requested_by)
-    REFERENCES public."user"(id)
-);
-
-------------------------------------------------------------
--- 4. ACCOUNTS (VIRTUAL ACCOUNTS)
-------------------------------------------------------------
-CREATE TABLE public.account (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  group_id uuid NOT NULL,
-  virtual_account_number text NOT NULL UNIQUE,
-  provider_ref text,
-  created_at timestamp without time zone NOT NULL DEFAULT now(),
-  provider text,
-  status text NOT NULL DEFAULT 'pending'
-    CHECK (status = ANY (ARRAY['pending','active','failed'])),
-  bank_name text NOT NULL DEFAULT 'Wema Bank',
-  CONSTRAINT account_group_id_fkey FOREIGN KEY (group_id)
-    REFERENCES public."group"(id)
-);
-
-CREATE TABLE public.account_metadata (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  account_id uuid NOT NULL,
-  provider text NOT NULL,
-  raw_payload jsonb NOT NULL,
-  created_at timestamp without time zone NOT NULL DEFAULT now(),
-  CONSTRAINT account_metadata_account_id_fkey FOREIGN KEY (account_id)
-    REFERENCES public.account(id)
-);
-
-------------------------------------------------------------
--- 5. LEDGER
-------------------------------------------------------------
-CREATE TABLE public.ledger_entry (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  group_id uuid NOT NULL,
-  account_id uuid NOT NULL,
-  user_id uuid,
-  type text NOT NULL CHECK (type = ANY (ARRAY['CREDIT','DEBIT'])),
-  amount_kobo integer NOT NULL CHECK (amount_kobo >= 0),
-  currency text NOT NULL DEFAULT 'NGN'
-    CHECK (currency = 'NGN'),
-  source text CHECK (
-    source = ANY (ARRAY['demo','provider_sandbox','payout'])
-  ),
-  reference text NOT NULL UNIQUE,
-  simulated boolean DEFAULT false,
-  created_at timestamp without time zone NOT NULL DEFAULT now(),
-  payment_channel text DEFAULT 'VA',
-  rule_status text DEFAULT 'VALID',
-  client_ref text UNIQUE,
-  CONSTRAINT ledger_entry_group_id_fkey FOREIGN KEY (group_id)
-    REFERENCES public."group"(id),
-  CONSTRAINT ledger_entry_account_id_fkey FOREIGN KEY (account_id)
-    REFERENCES public.account(id),
-  CONSTRAINT ledger_entry_user_id_fkey FOREIGN KEY (user_id)
-    REFERENCES public."user"(id)
-);
-
-------------------------------------------------------------
--- 6. PAYOUTS
-------------------------------------------------------------
-CREATE TABLE public.payout (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  withdrawal_id uuid NOT NULL,
-  provider text NOT NULL,
-  amount_kobo integer NOT NULL CHECK (amount_kobo > 0),
-  beneficiary jsonb NOT NULL,
-  status text NOT NULL CHECK (
-    status = ANY (ARRAY['PENDING','SUCCESS','FAILED'])
-  ),
-  provider_payload jsonb,
-  created_at timestamp without time zone NOT NULL DEFAULT now(),
-  CONSTRAINT payout_withdrawal_id_fkey FOREIGN KEY (withdrawal_id)
-    REFERENCES public.withdrawal_request(id)
-);
-
-CREATE TABLE public.payout_recovery (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  withdrawal_id uuid NOT NULL,
-  attempted_payload jsonb,
-  error_message text,
-  created_at timestamp without time zone NOT NULL DEFAULT now(),
-  CONSTRAINT payout_recovery_withdrawal_id_fkey FOREIGN KEY (withdrawal_id)
-    REFERENCES public.withdrawal_request(id)
-);
-
-------------------------------------------------------------
--- 7. APPROVALS
-------------------------------------------------------------
-CREATE TABLE public.approval (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  withdrawal_id uuid NOT NULL,
-  approver_user_id uuid NOT NULL,
-  created_at timestamp without time zone NOT NULL DEFAULT now(),
-  CONSTRAINT approval_withdrawal_id_fkey FOREIGN KEY (withdrawal_id)
-    REFERENCES public.withdrawal_request(id),
-  CONSTRAINT approval_approver_user_id_fkey FOREIGN KEY (approver_user_id)
-    REFERENCES public."user"(id)
-);
-
-------------------------------------------------------------
--- 8. WEBHOOK EVENTS
-------------------------------------------------------------
-CREATE TABLE public.webhook_event (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  event_type text NOT NULL,
-  raw_payload jsonb NOT NULL,
-  processed boolean DEFAULT false,
-  processed_at timestamp without time zone,
-  created_at timestamp without time zone NOT NULL DEFAULT now()
-);
-
-------------------------------------------------------------
--- 9. VIRTUAL ACCOUNT RECOVERY & REQUESTS
-------------------------------------------------------------
-CREATE TABLE public.va_request (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  group_id uuid NOT NULL,
-  provider text NOT NULL,
-  client_ref text NOT NULL,
-  status text NOT NULL CHECK (
-    status = ANY (ARRAY['pending','success','failed'])
-  ),
-  last_error text,
-  created_at timestamp without time zone NOT NULL DEFAULT now(),
-  updated_at timestamp without time zone NOT NULL DEFAULT now(),
-  CONSTRAINT va_request_group_id_fkey FOREIGN KEY (group_id)
-    REFERENCES public."group"(id)
-);
-
-CREATE TABLE public.va_recovery (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  tx_ref text NOT NULL,
-  group_id uuid NOT NULL,
-  provider text NOT NULL DEFAULT 'flutterwave',
-  raw_payload jsonb NOT NULL,
-  error_message text,
-  status text NOT NULL DEFAULT 'pending',
-  created_at timestamp without time zone NOT NULL DEFAULT now(),
-  last_retry_at timestamp without time zone,
-  retry_count integer NOT NULL DEFAULT 0,
-  CONSTRAINT va_recovery_group_id_fkey FOREIGN KEY (group_id)
-    REFERENCES public."group"(id)
-);
-
-
-```
+---
