@@ -1,5 +1,4 @@
-# Secure Fields Readme
-
+# Secure Fields
 This document describes the secure field encryption helper used across the codebase. Secure fields are automatically encrypted before being written to the database and decrypted when read back into the application. This ensures sensitive data is never stored in plaintext at rest.
 
 The encryption layer is handled by encryptFields and decryptFields, which operate based on the secure field maps defined in secureFieldMaps.js.
@@ -14,7 +13,7 @@ Each model defines which fields are sensitive and must always be encrypted.
 
 Fields encrypted for user records.
 
-. email
+`email`
 
 ---
 
@@ -22,9 +21,9 @@ Fields encrypted for user records.
 
 Sensitive metadata stored with refresh tokens.
 
-. device_info
+`device_info`
 
-. ip_address
+`ip_address`
 
 ---
 
@@ -32,9 +31,9 @@ Sensitive metadata stored with refresh tokens.
 
 Metadata stored for user activity logging.
 
-. ip_address
+`ip_address`
 
-. device_info
+`device_info`
 
 ---
 
@@ -42,9 +41,9 @@ Metadata stored for user activity logging.
 
 Encrypted within account records.
 
-. virtual_account_number
+`virtual_account_number`
 
-. provider_ref
+`provider_ref`
 
 ---
 
@@ -52,9 +51,9 @@ Encrypted within account records.
 
 Encrypted inside ledger entries.
 
-. reference
+`reference`
 
-. client_ref
+`client_ref`
 
 ---
 
@@ -62,9 +61,9 @@ Encrypted inside ledger entries.
 
 Used in payoutModel to encrypt provider data and beneficiary details.
 
-. beneficiary
+`beneficiary`
 
-. provider_payload
+`provider_payload`
 
 ---
 
@@ -72,9 +71,9 @@ Used in payoutModel to encrypt provider data and beneficiary details.
 
 Used in withdrawalModel to encrypt withdrawal instructions.
 
-. beneficiary
+`beneficiary`
 
-. reason
+`reason`
 
 ---
 
@@ -82,7 +81,7 @@ Used in withdrawalModel to encrypt withdrawal instructions.
 
 Used when requesting virtual accounts.
 
-. client_ref
+`client_ref`
 
 
 ---
@@ -91,9 +90,9 @@ Used when requesting virtual accounts.
 
 Used for storing failed virtual account request attempts.
 
-. raw_payload
+`raw_payload`
 
-. error_message
+`error_message`
 
 
 ---
@@ -102,7 +101,7 @@ Used for storing failed virtual account request attempts.
 
 Encrypted storage of raw provider metadata for accounts.
 
-.raw_payload
+`raw_payload`
 
 ---
 
@@ -110,9 +109,9 @@ Encrypted storage of raw provider metadata for accounts.
 
 Encrypted fields for recording failed payout attempts.
 
-.attempted_payload
+`attempted_payload`
 
-.error_message
+`error_message`
 
 ---
 
@@ -120,7 +119,7 @@ Encrypted fields for recording failed payout attempts.
 
 Encrypted storage of raw webhook payloads.
 
-. raw_payload
+`raw_payload`
 
 
 ---
@@ -161,8 +160,8 @@ The following secure field definitions are placeholders and will be finalized af
 
 Pending Secure Field Mapping (to be completed after provider integration):
 
-'VA_REQUEST_SECURE_FIELDS' → expecting final structure once real provider client_ref format is confirmed
+`VA_REQUEST_SECURE_FIELDS` → expecting final structure once real provider client_ref format is confirmed
 
-'VA_RECOVERY_SECURE_FIELDS' → depends on exact shape of provider error payloads
+`VA_RECOVERY_SECURE_FIELDS` → depends on exact shape of provider error payloads
 
-'WEBHOOK_EVENT_SECURE_FIELDS' → depends on final webhook schema from Flutterwave
+`WEBHOOK_EVENT_SECURE_FIELDS` → depends on final webhook schema from Flutterwave
