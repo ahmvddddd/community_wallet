@@ -1,42 +1,85 @@
+const pool = require('../../db/db');
+const { encryptFields, decryptFields } = require('../../utils/secureFields');
+const { 
+  LEDGER_SECURE_FIELDS, 
+  PAYOUT_SECURE_FIELDS, 
+  PAYOUT_RECOVERY_SECURE_FIELDS, 
+  WITHDRAWAL_SECURE_FIELDS 
+} = require('../../utils/secureFieldMaps');
+
+
 exports.recordPayoutAndHandleLedger = async (client, withdrawal, payoutResult, executedByUserId) => {
-  const { id: withdrawalId, group_id, amount_kobo, beneficiary, status: withdrawalStatusOriginal } = withdrawal;
+
+  const { 
+    id: withdrawalId, 
+    group_id, 
+    amount_kobo, 
+    beneficiary: beneficiaryEncrypted, 
+    status: withdrawalStatusOriginal 
+  } = withdrawal;
+
   const { status, providerResponse } = payoutResult;
 
   if (!withdrawalId) throw new Error('Missing withdrawal id');
   if (typeof amount_kobo !== 'number' || amount_kobo <= 0) throw new Error('Invalid withdrawal.amount_kobo');
-  if (!beneficiary || !beneficiary.account_number) throw new Error('Invalid beneficiary');
 
-  
+
+  const decryptedWithdrawal = decryptFields(
+    { beneficiary: beneficiaryEncrypted?.encrypted },
+    WITHDRAWAL_SECURE_FIELDS
+  );
+
+  const beneficiaryPlain = decryptedWithdrawal.beneficiary;
+
+  if (!beneficiaryPlain || !beneficiaryPlain.account_number) {
+    throw new Error('Invalid beneficiary');
+  }
+
+
   const existing = await client.query(
     `SELECT * FROM payout WHERE withdrawal_id = $1 AND status = 'SUCCESS' LIMIT 1`,
     [withdrawalId]
   );
+
   if (existing.rows.length > 0) {
     return { withdrawalStatus: 'PAID', payout: existing.rows[0] };
   }
 
-  
+
+  const payoutData = { 
+    beneficiary: beneficiaryPlain,
+    provider_payload: providerResponse || {} 
+  };
+
+  const securePayout = encryptFields(payoutData, PAYOUT_SECURE_FIELDS);
+
+
   const payoutInsertQuery = `
     INSERT INTO payout (withdrawal_id, amount_kobo, beneficiary, provider, status, provider_payload, created_at)
     VALUES ($1, $2, $3, $4, $5, $6, NOW())
     RETURNING *;
   `;
+
   const payoutValues = [
     withdrawalId,
     amount_kobo,
-    JSON.stringify(beneficiary),
+    JSON.stringify({ encrypted: securePayout.beneficiary }),
     providerResponse?.provider || 'mock_provider',
     status,
-    JSON.stringify(providerResponse || {})
+    JSON.stringify({ encrypted: securePayout.provider_payload })
   ];
+
   const payoutInsert = await client.query(payoutInsertQuery, payoutValues);
   if (payoutInsert.rowCount !== 1) throw new Error('Failed to insert payout');
 
   const payoutRow = payoutInsert.rows[0];
+
   let finalWithdrawalStatus = withdrawalStatusOriginal;
 
+
   if (status === 'SUCCESS') {
-    
+
+    // Mark withdrawal as PAID
     const updateWithdrawal = await client.query(
       `UPDATE withdrawal_request
        SET status = 'PAID', executed_at = NOW()
@@ -44,53 +87,102 @@ exports.recordPayoutAndHandleLedger = async (client, withdrawal, payoutResult, e
        RETURNING status`,
       [withdrawalId]
     );
+
     if (updateWithdrawal.rowCount !== 1) {
       throw new Error('Failed to update withdrawal to PAID (may be concurrent execution)');
     }
+
     finalWithdrawalStatus = updateWithdrawal.rows[0].status;
 
-    
-const accountRes = await client.query(
-  `SELECT id FROM account WHERE group_id = $1 LIMIT 1`,
-  [group_id]
-);
 
-if (accountRes.rowCount !== 1) {
-  throw new Error(`Cannot find a valid account for group ${group_id}`);
-}
+    // Get ledger account
+    const accountRes = await client.query(
+      `SELECT id FROM account WHERE group_id = $1 LIMIT 1`,
+      [group_id]
+    );
 
-const ledgerAccountId = accountRes.rows[0].id;
+    if (accountRes.rowCount !== 1) {
+      throw new Error(`Cannot find a valid account for group ${group_id}`);
+    }
 
+    const ledgerAccountId = accountRes.rows[0].id;
 
-const ledgerInsertQuery = `
-  INSERT INTO ledger_entry (group_id, account_id, type, amount_kobo, source, reference, created_at)
-  VALUES ($1, $2, 'DEBIT', $3, 'payout', $4, NOW())
-  RETURNING *;
-`;
+    // Prepare ledger reference
+    const payoutReference = `PAYOUT_${withdrawalId}_${Date.now()}`;
+    const ledgerData = { reference: payoutReference };
 
-const ledgerValues = [
-  group_id,
-  ledgerAccountId,
-  amount_kobo,
-  `PAYOUT_${withdrawalId}_${Date.now()}`
-];
+    const secureLedger = encryptFields(ledgerData, LEDGER_SECURE_FIELDS);
 
-const ledgerInsert = await client.query(ledgerInsertQuery, ledgerValues);
-if (ledgerInsert.rowCount !== 1) {
-  throw new Error('Failed to insert ledger entry for payout');
-}
+    // Insert ledger entry
+    const ledgerInsertQuery = `
+      INSERT INTO ledger_entry (group_id, account_id, type, amount_kobo, source, reference, created_at)
+      VALUES ($1, $2, 'DEBIT', $3, 'payout', $4, NOW())
+      RETURNING *;
+    `;
+
+    const ledgerValues = [
+      group_id,
+      ledgerAccountId,
+      amount_kobo,
+      secureLedger.reference
+    ];
+
+    const ledgerInsert = await client.query(ledgerInsertQuery, ledgerValues);
+    if (ledgerInsert.rowCount !== 1) {
+      throw new Error('Failed to insert ledger entry for payout');
+    }
+
 
   } else {
+
+    
     const recoveryQuery = `
-      INSERT INTO payout_recovery (withdrawal_id, attempt_payload, error_details, created_at)
+      INSERT INTO payout_recovery (withdrawal_id, attempted_payload, error_message, created_at)
       VALUES ($1, $2, $3, NOW())
       RETURNING *;
     `;
-    const errorDetails = providerResponse?.error_code ?? providerResponse?.message ?? 'Provider failed';
-    await client.query(recoveryQuery, [withdrawalId, JSON.stringify(payoutResult), errorDetails]);
+
+    const errorDetails = providerResponse?.error_code 
+                      ?? providerResponse?.message 
+                      ?? 'Provider failed';
+
+    const recoveryData = {
+      attempted_payload: payoutResult,
+      error_message: errorDetails
+    };
+
+    const secureRecovery = encryptFields(recoveryData, PAYOUT_RECOVERY_SECURE_FIELDS);
+
+    await client.query(recoveryQuery, [
+      withdrawalId,
+      JSON.stringify({ encrypted: secureRecovery.attempted_payload }),
+      secureRecovery.error_message
+    ]);
   }
 
-  return { withdrawalStatus: finalWithdrawalStatus, payout: payoutRow };
+
+  const encryptedBeneficiary = payoutRow.beneficiary?.encrypted;
+  const encryptedProviderPayload = payoutRow.provider_payload?.encrypted;
+
+  const decryptedSecure = decryptFields(
+    {
+      beneficiary: encryptedBeneficiary,
+      provider_payload: encryptedProviderPayload
+    },
+    PAYOUT_SECURE_FIELDS
+  );
+
+  const finalPayout = {
+    ...payoutRow,
+    beneficiary: decryptedSecure.beneficiary,
+    provider_payload: decryptedSecure.provider_payload
+  };
+
+
+  return { 
+    withdrawalStatus: finalWithdrawalStatus, 
+    payout: finalPayout 
+  };
 };
 
 

@@ -1,15 +1,31 @@
 const pool = require('../../db/db');
+const { encryptFields } = require('../../utils/secureFields');
+const { WITHDRAWAL_SECURE_FIELDS } = require('../../utils/secureFieldMaps');
 
 exports.createWithdrawalRequest = async ({ groupId, amountKobo, beneficiary, requestedBy, reason }) => {
+
+    const withdrawalData = {
+        beneficiary: beneficiary,
+        reason: reason
+    };
+
+    const secureWithdrawal = encryptFields(withdrawalData, WITHDRAWAL_SECURE_FIELDS);
     const status = 'PENDING';
-    
+
     const q = `
     INSERT INTO withdrawal_request
     (group_id, amount_kobo, beneficiary, requested_by, status, reason)
     VALUES ($1, $2, $3, $4, $5, $6)
     RETURNING *`;
 
-    const values = [groupId, amountKobo, beneficiary, requestedBy, status, reason];
+    const values = [
+    groupId,
+    amountKobo,
+    JSON.stringify({ encrypted: secureWithdrawal.beneficiary }),
+    requestedBy,
+    status,
+    JSON.stringify({ encrypted: secureWithdrawal.reason })
+];
 
     const result = await pool.query(q, values);
     return result.rows[0];
@@ -30,7 +46,8 @@ exports.getWithdrawalWithGroup = async (withdrawalId) => {
         WHERE wr.id = $1;
     `;
     const result = await pool.query(q, [withdrawalId]);
-    return result.rows[0];
+    return result.rows[0] || null;
+
 };
 
 
@@ -40,7 +57,7 @@ exports.insertApproval = async (withdrawalId, approverUserId) => {
         VALUES ($1, $2)
         RETURNING *;
     `;
-    
+
     const result = await pool.query(q, [withdrawalId, approverUserId]);
     return result.rows[0];
 };

@@ -1,44 +1,50 @@
 const pool = require('../../db/db');
-const argon2 = require('argon2');
+const {
+  findUserByEmail,
+  createUser,
+  getUserLoginData,
+  verifyPassword,
+  audit
+} = require('../../models/auth/authModel');
+
+const {
+  insertToken,
+  revokeToken,
+  findTokenByHash
+} = require('../../models/auth/refreshTokenModel');
 const { signAccess } = require('./tokens');
 const { newRawRefresh, hashRefresh } = require('./refreshLib');
 
-const audit = async (client, userId, event, req) => {
-  await client.query(
-    'INSERT INTO user_activity_log(user_id,event,ip_address,device_info) VALUES($1,$2,$3,$4)',
-    [userId, event, req.ip, req.get('User-Agent')]);
-};
 
-// REGISTER
 exports.register = async (req, res) => {
   const client = await pool.connect();
+
   try {
     const { email, password, name } = req.body;
 
-    if (!email || !password || !name) {
-      return res.status(400).json({ error: 'Missing fields' });
-    }
+    await client.query('BEGIN');
 
-    const exists = await client.query('SELECT 1 FROM "user" WHERE LOWER(email)=LOWER($1)', [email]);
-
+    const exists = await findUserByEmail(client, email);
     if (exists.rowCount) {
-      return res.status(409).json({ error: 'Account already exists – please log in' });
-    }
-    if (!/^(?=.*\d).{8,}$/.test(password)) {
-      return res.status(400).json({ error: 'Weak password' });
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'User already exists' });
     }
 
-    const hash = await argon2.hash(password, { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 });
-    const ins = await client.query(
-      'INSERT INTO "user"(email,password_hash,name) VALUES($1,$2,$3) RETURNING id,email,name',
-      [email, hash, name]);
+    const user = await createUser(client, email, password, name);
 
-    await audit(client, ins.rows[0].id, 'REGISTER', req);
+    await audit(client, user.id, 'REGISTER', req.ip, req.headers['user-agent']);
 
-    return res.status(201).json({ user: ins.rows[0] });
+    await client.query('COMMIT');
 
-  } catch (e) {
-    return res.status(500).json({ error: 'Server error' });
+    return res.status(201).json({
+      message: 'User registered successfully',
+      user
+    });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Register error:', err);
+    return res.status(500).json({ message: 'Server error' });
   } finally {
     client.release();
   }
@@ -46,94 +52,131 @@ exports.register = async (req, res) => {
 
 
 exports.login = async (req, res) => {
-
   const client = await pool.connect();
 
   try {
-
     const { email, password } = req.body;
 
-    const r = await client.query('SELECT id,password_hash FROM "user" WHERE LOWER(email)=LOWER($1)', [email]);
+    await client.query('BEGIN');
 
-    if (!r.rowCount) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+    const user = await getUserLoginData(client, email);
+    if (!user) {
+      await client.query('ROLLBACK');
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const u = r.rows[0];
-    const ok = await argon2.verify(u.password_hash, password);
-
-    if (!ok) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+    const valid = await verifyPassword(user.password_hash, password);
+    if (!valid) {
+      await client.query('ROLLBACK');
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const accessToken = signAccess({ sub: u.id });
-    const raw = newRawRefresh();
-    const hash = hashRefresh(raw);
-    const exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const accessToken = signAccess({ sub: user.id });
+    const rawRefresh = newRawRefresh();
+    const refreshHash = hashRefresh(rawRefresh);
 
-    await client.query('INSERT INTO refresh_tokens(user_id,token_hash,device_info,ip_address,expires_at) VALUES($1,$2,$3,$4,$5)',
-      [u.id, hash, req.get('User-Agent') || null, req.ip || null, exp]);
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    res.cookie('refresh_token', raw, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/api/v1/auth/refresh', maxAge: 30 * 24 * 60 * 60 * 1000 });
-    await audit(client, u.id, 'LOGIN', req);
+    await insertToken(client, user.id, refreshHash, req.ip, req.get('User-Agent'), expiresAt);
 
-    return res.json({ accessToken, user: { id: u.id, email } });
+    res.cookie('refresh_token', rawRefresh, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/v1/auth/refresh',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
 
-  } catch (e) {
-    return res.status(500).json({ error: 'Server error' });
+    await audit(client, user.id, 'LOGIN', req.ip, req.headers['user-agent']);
+
+    await client.query('COMMIT');
+
+    return res.status(200).json({
+      accessToken,
+      user: { id: user.id, email }
+    });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Login error:', err);
+    return res.status(500).json({ message: 'Server error' });
   } finally {
     client.release();
   }
 };
 
-// REFRESH
+
 exports.refresh = async (req, res) => {
   const raw = req.cookies?.refresh_token || req.body?.refreshToken;
-
-  if (!raw) {
-    return res.status(401).json({ error: 'No token' });
-  }
+  if (!raw) return res.status(401).json({ error: 'No token' });
 
   const client = await pool.connect();
 
   try {
     const h = hashRefresh(raw);
-    const r = await client.query('SELECT id,user_id,revoked,expires_at FROM refresh_tokens WHERE token_hash=$1', [h]);
 
-    if (!r.rowCount) {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
+
+    const r = await findTokenByHash(client, h);
+
+    if (!r.rowCount) return res.status(401).json({ error: 'Invalid token' });
+
     const t = r.rows[0];
+
 
     if (t.revoked || new Date(t.expires_at) < new Date()) {
       return res.status(401).json({ error: 'Token expired' });
     }
 
     await client.query('BEGIN');
+
     const newRaw = newRawRefresh();
     const newHash = hashRefresh(newRaw);
     const exp = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    const ins = await client.query('INSERT INTO refresh_tokens(user_id,token_hash,device_info,ip_address,expires_at) VALUES($1,$2,$3,$4,$5) RETURNING id',
-      [t.user_id, newHash, req.get('User-Agent') || null, req.ip || null, exp]);
 
-    await client.query('UPDATE refresh_tokens SET revoked=true,replaced_by=$1 WHERE id=$2', [ins.rows[0].id, t.id]);
+    const ins = await insertToken(
+      client,
+      t.user_id,
+      newHash,
+      req.ip,
+      req.get('User-Agent'),
+      exp
+    );
+
+    await revokeToken(client, ins.rows[0].id, t.id);
+
     await client.query('COMMIT');
+
     const accessToken = signAccess({ sub: t.user_id });
-    res.cookie('refresh_token', newRaw, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/api/v1/auth/refresh', maxAge: 30 * 24 * 60 * 60 * 1000 });
-    await audit(client, t.user_id, 'REFRESH', req);
+
+    res.cookie('refresh_token', newRaw, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/v1/auth/refresh',
+      maxAge: 30 * 24 * 60 * 60 * 1000
+    });
+
+    await audit(
+      client,
+      t.user_id,
+      'REFRESH',
+      req.ip,
+      req.get('User-Agent')
+    );
 
     return res.json({ accessToken });
 
   } catch (e) {
     await client.query('ROLLBACK').catch(() => { });
+    console.error(e);
     return res.status(500).json({ error: 'Server error' });
   } finally {
     client.release();
   }
 };
 
-// LOGOUT + LOGOUT ALL
+
 exports.logout = async (req, res) => {
 
   const raw = req.cookies?.refresh_token || req.body?.refreshToken;
