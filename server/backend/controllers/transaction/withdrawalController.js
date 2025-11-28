@@ -3,7 +3,8 @@ const { createWithdrawalRequest,
     insertApproval, 
     countApprovalsForWithdrawal, 
     updateWithdrawalStatusToApproved,
-    updateWithdrawalStatusToRejected   } = require('../../models/transaction/withdrawalModel');
+    updateWithdrawalStatusToRejected,
+    getGroupWithdrawals   } = require('../../models/transaction/withdrawalModel');
 const { validateTransactionPin } = require('./transactionPinController');
 const pool = require('../../db/db');
 const Joi = require('joi');
@@ -211,5 +212,37 @@ exports.rejectWithdrawal = async (req, res) => {
     } catch (error) {
         console.error('Withdrawal Rejection Error:', error);
         return res.status(500).json({ message: 'An internal server error occurred.' });
+    }
+};
+
+exports.groupWithdrawals = async (req, res) => {
+    try {
+        const groupId = req.params.group_id;
+
+        if (!groupId) {
+            return res.status(400).json({ error: 'Missing group_id' });
+        }
+
+        let { status, page, pageSize } = req.query;
+
+        const allowedStatus = ['PENDING', 'APPROVED', 'DECLINED', 'PAID'];
+        if (status && !allowedStatus.includes(status)) {
+            return res.status(400).json({ error: 'Invalid status filter' });
+        }
+
+        page = parseInt(page) || 1;
+        pageSize = parseInt(pageSize) || 10;
+
+        if (pageSize > 50) pageSize = 50;
+
+        const results = await getGroupWithdrawals(
+            groupId,
+            { status, page, pageSize }
+        );
+
+        return res.status(200).json(results);
+
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
     }
 };

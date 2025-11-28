@@ -13,8 +13,8 @@ module.exports = {
 
   WITHDRAWAL_SECURE_FIELDS: ['beneficiary', 'reason'],
 
-  // approval.approver_user_id is a FK → keep unencrypted, or we break joins
-  APPROVAL_SECURE_FIELDS: [],
+  // // approval.approver_user_id is a FK → keep unencrypted, or we break joins
+  // APPROVAL_SECURE_FIELDS: [],
 
   VA_REQUEST_SECURE_FIELDS: ['client_ref'],
 

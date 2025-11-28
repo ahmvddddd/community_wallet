@@ -69,3 +69,45 @@ exports.createGroup = async (req, res) => {
         return res.status(500).json({ message: error.message });
     }
 }
+
+
+exports.getAllMygroups = async (req, res) => {
+    try {
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const myGroups = await groupModel.getMyGroups(req.user.id);
+
+        return res.status(200).json(myGroups);
+
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+
+exports.groupSum = async (req, res) => {
+    try {
+        const groupId = req.params.group_id;
+
+        if (!groupId) {
+            return res.status(400).json({ error: 'No Group Id' });
+        }
+
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const totalSummary = await groupModel.groupSummary(groupId);
+
+        if (!totalSummary) {
+            return res.status(404).json({ error: 'Group not found or no data' });
+        }
+
+        return res.status(200).json(totalSummary);
+
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
