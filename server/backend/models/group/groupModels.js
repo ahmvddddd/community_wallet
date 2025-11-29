@@ -1,4 +1,6 @@
 const pool = require('../../db/db');
+const { decryptFields } = require('../../utils/secureFields');
+const { LEDGER_SECURE_FIELDS } = require('../../utils/secureFieldMaps');
 
 
 exports.getBalance = async (groupId) => {
@@ -135,4 +137,51 @@ exports.groupSummary = async (groupId) => {
       paid: Number(wd.paid),
     }
   };
+};
+
+exports.getLedgerEntries = async (groupId, page, pageSize) => {
+  const offset = (page - 1) * pageSize;
+
+  const query = `
+    SELECT 
+      le.id,
+      le.group_id,
+      le.account_id,
+      le.user_id,
+      le.type,
+      le.amount_kobo,
+      le.currency,
+      le.source,
+      le.reference,
+      le.simulated,
+      le.created_at,
+      le.payment_channel,
+      le.rule_status,
+      le.client_ref
+    FROM ledger_entry le
+    WHERE le.group_id = $1
+    ORDER BY le.created_at DESC
+    LIMIT $2 OFFSET $3
+  `;
+
+  const { rows } = await pool.query(query, [groupId, pageSize, offset]);
+
+  const decrypted = rows.map(row => {
+    const dec = decryptFields(row, LEDGER_SECURE_FIELDS);
+
+    if (dec.reference) {
+      dec.reference_masked =
+        dec.reference.substring(0, 4) + "****" + dec.reference.slice(-4);
+    }
+
+    return dec;
+  });
+
+  return decrypted;
+};
+
+exports.getLedgerEntryCount = async (groupId) => {
+  const q = `SELECT COUNT(*) FROM ledger_entry WHERE group_id = $1`;
+  const { rows } = await pool.query(q, [groupId]);
+  return parseInt(rows[0].count, 10);
 };

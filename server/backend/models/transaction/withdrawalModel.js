@@ -1,5 +1,5 @@
 const pool = require('../../db/db');
-const { encryptFields } = require('../../utils/secureFields');
+const { encryptFields, decryptFields } = require('../../utils/secureFields');
 const { WITHDRAWAL_SECURE_FIELDS } = require('../../utils/secureFieldMaps');
 
 exports.createWithdrawalRequest = async ({ groupId, amountKobo, beneficiary, requestedBy, reason }) => {
@@ -125,7 +125,6 @@ exports.getGroupWithdrawals = async (groupId, { status, page, pageSize }) => {
 
             g.approvals_required,
 
-            -- count approvals per withdrawal
             COALESCE(COUNT(a.id), 0) AS approvals_count
 
         FROM withdrawal_request wr
@@ -146,12 +145,25 @@ exports.getGroupWithdrawals = async (groupId, { status, page, pageSize }) => {
         let beneficiaryName = null;
         let reasonText = null;
 
-        try {
-            const enc = {
-                beneficiary: row.beneficiary?.encrypted,
-                reason: row.reason?.encrypted
-            };
+        let reasonEncrypted = null;
 
+        if (row.reason) {
+            try {
+                
+                const parsed = JSON.parse(row.reason);
+                if (parsed?.encrypted) {
+                    reasonEncrypted = parsed.encrypted;
+                }
+            } catch (_) {
+            }
+        }
+
+        const enc = {
+            beneficiary: row.beneficiary?.encrypted,
+            reason: reasonEncrypted
+        };
+
+        try {
             const decrypted = decryptFields(enc, WITHDRAWAL_SECURE_FIELDS);
 
             if (decrypted.beneficiary && typeof decrypted.beneficiary === "object") {
@@ -162,6 +174,13 @@ exports.getGroupWithdrawals = async (groupId, { status, page, pageSize }) => {
 
         } catch (e) {
             
+            if (row.beneficiary && typeof row.beneficiary === "object") {
+                beneficiaryName = row.beneficiary.name || null;
+            }
+
+            if (typeof row.reason === "string") {
+                reasonText = row.reason;
+            }
         }
 
         return {
@@ -170,7 +189,6 @@ exports.getGroupWithdrawals = async (groupId, { status, page, pageSize }) => {
             amount_kobo: row.amount_kobo,
 
             beneficiary_name: beneficiaryName,
-
             reason: reasonText,
 
             status: row.status,
@@ -182,6 +200,7 @@ exports.getGroupWithdrawals = async (groupId, { status, page, pageSize }) => {
             approvals_count: Number(row.approvals_count)
         };
     });
+
 
     const countValues = [groupId];
     let countWhere = `WHERE group_id = $1`;
@@ -196,6 +215,7 @@ exports.getGroupWithdrawals = async (groupId, { status, page, pageSize }) => {
         FROM withdrawal_request
         ${countWhere}
     `;
+
     const countRes = await pool.query(countQ, countValues);
 
     return {
@@ -207,3 +227,86 @@ exports.getGroupWithdrawals = async (groupId, { status, page, pageSize }) => {
     };
 };
 
+
+exports.getDetail = async (withdrawalId, userId) => {
+    
+    const q = `
+        SELECT 
+            wr.id,
+            wr.group_id,
+            wr.amount_kobo,
+            wr.beneficiary,
+            wr.reason,
+            wr.status,
+            wr.requested_by,
+            wr.expires_at,
+            wr.created_at,
+            wr.executed_at,
+            u.name AS requester_name
+        FROM withdrawal_request wr
+        JOIN "user" u ON u.id = wr.requested_by
+        WHERE wr.id = $1
+    `;
+
+    const wrRes = await pool.query(q, [withdrawalId]);
+    if (wrRes.rows.length === 0) return null;
+
+    let withdrawal = wrRes.rows[0];
+
+    const memQ = `
+        SELECT 1
+        FROM group_membership
+        WHERE group_id = $1 AND user_id = $2
+        LIMIT 1
+    `;
+    const memRes = await pool.query(memQ, [withdrawal.group_id, userId]);
+
+    if (memRes.rows.length === 0) {
+        
+        return { unauthorized: true };
+    }
+
+    let reasonEncrypted = null;
+
+    if (withdrawal.reason) {
+        try {
+            const parsed = JSON.parse(withdrawal.reason);
+            if (parsed?.encrypted) reasonEncrypted = parsed.encrypted;
+        } catch (_) {}
+    }
+
+    const enc = {
+        beneficiary: withdrawal.beneficiary?.encrypted,
+        reason: reasonEncrypted
+    };
+
+    let decrypted;
+    try {
+        decrypted = decryptFields(enc, WITHDRAWAL_SECURE_FIELDS);
+    } catch (e) {
+        decrypted = {};
+    }
+
+    withdrawal.beneficiary = {
+        name: decrypted?.beneficiary?.name || null
+    };
+
+    withdrawal.reason = decrypted?.reason || null;
+
+    const approvalQ = `
+        SELECT 
+            a.id,
+            a.created_at,
+            u.name AS approver_name,
+            u.id   AS approver_user_id
+        FROM approval a
+        JOIN "user" u ON u.id = a.approver_user_id
+        WHERE a.withdrawal_id = $1
+        ORDER BY a.created_at ASC
+    `;
+    const approvalRes = await pool.query(approvalQ, [withdrawalId]);
+
+    withdrawal.approvals = approvalRes.rows;
+
+    return withdrawal;
+};

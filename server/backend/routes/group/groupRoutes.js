@@ -8,5 +8,6 @@ router.get('/:group_id/contributions', group.getContributions);
 router.post('/create-group', ensureAuth, group.createGroup);
 router.get('/my-groups', ensureAuth, group.getAllMygroups);
 router.get('/:group_id/group-summary', ensureAuth, group.groupSum);
+router.get('/:group_id/ledger-snapshot', ensureAuth, group.getGroupLedger);
 
 module.exports = router;

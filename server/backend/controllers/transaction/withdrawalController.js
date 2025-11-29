@@ -1,10 +1,11 @@
-const { createWithdrawalRequest, 
-    getWithdrawalWithGroup, 
-    insertApproval, 
-    countApprovalsForWithdrawal, 
-    updateWithdrawalStatusToApproved,
-    updateWithdrawalStatusToRejected,
-    getGroupWithdrawals   } = require('../../models/transaction/withdrawalModel');
+const { createWithdrawalRequest,
+  getWithdrawalWithGroup,
+  insertApproval,
+  countApprovalsForWithdrawal,
+  updateWithdrawalStatusToApproved,
+  updateWithdrawalStatusToRejected,
+  getGroupWithdrawals,
+  getDetail } = require('../../models/transaction/withdrawalModel');
 const { validateTransactionPin } = require('./transactionPinController');
 const pool = require('../../db/db');
 const Joi = require('joi');
@@ -24,7 +25,7 @@ const withdrawalSchema = Joi.object({
 
 exports.withdrawalRequest = async (req, res) => {
   try {
-    
+
     const { error, value } = withdrawalSchema.validate(req.body);
     if (error) {
       return res.status(400).json({ error: error.details[0].message });
@@ -37,13 +38,13 @@ exports.withdrawalRequest = async (req, res) => {
 
     const { groupId, amount, beneficiary, reason } = value;
 
-    
+
     const amountKobo = Math.round(amount * 100);
     if (amountKobo <= 0) {
       return res.status(400).json({ error: 'Amount must be greater than zero after conversion' });
     }
 
-    
+
     const memberResult = await pool.query(
       'SELECT user_id FROM group_membership WHERE user_id = $1 AND group_id = $2',
       [userId, groupId],
@@ -94,155 +95,198 @@ exports.withdrawalRequest = async (req, res) => {
 
 
 const pinSchema = Joi.object({
-    pin: Joi.string().length(4).pattern(/^[0-9]+$/).optional()
+  pin: Joi.string().length(4).pattern(/^[0-9]+$/).optional()
 });
 
 exports.approveWithdrawal = async (req, res) => {
-    const { error, value } = pinSchema.validate(req.body);
-    if (error) {
-        return res.status(400).json({ error: error.details[0].message });
+  const { error, value } = pinSchema.validate(req.body);
+  if (error) {
+    return res.status(400).json({ error: error.details[0].message });
+  }
+
+  const withdrawalId = req.params.withdrawal_id;
+  const userId = req.user.id;
+  const { pin } = value;
+
+  try {
+    const withdrawalData = await getWithdrawalWithGroup(withdrawalId);
+
+    if (!withdrawalData) {
+      return res.status(404).json({ error: 'Withdrawal request not found.' });
     }
 
-    const withdrawalId = req.params.withdrawal_id;
-    const userId = req.user.id;
-    const { pin } = value;
+    const { group_id, status, approvals_required } = withdrawalData;
+
+    if (status !== 'PENDING') {
+      return res.status(409).json({ error: `Withdrawal is no longer PENDING. Current status: ${status}` });
+    }
+
+    const roleCheck = await pool.query(
+      'SELECT role_in_group FROM group_membership WHERE user_id = $1 AND group_id = $2 AND role_in_group IN ($3, $4)',
+      [userId, group_id, 'OWNER', 'TREASURER']
+    );
+
+    if (roleCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'You are not authorised to approve this withdrawal (must be OWNER or TREASURER).' });
+    }
+
+    if (pin) {
+      const pinValid = await validateTransactionPin({ pin, userId });
+      if (!pinValid) {
+        return res.status(401).json({ error: 'Invalid transaction PIN.' });
+      }
+    }
 
     try {
-        const withdrawalData = await getWithdrawalWithGroup(withdrawalId);
+      await insertApproval(withdrawalId, userId);
+    } catch (dbError) {
 
-        if (!withdrawalData) {
-            return res.status(404).json({ error: 'Withdrawal request not found.' });
-        }
-
-        const { group_id, status, approvals_required } = withdrawalData;
-
-        if (status !== 'PENDING') {
-            return res.status(409).json({ error: `Withdrawal is no longer PENDING. Current status: ${status}` });
-        }
-
-        const roleCheck = await pool.query(
-            'SELECT role_in_group FROM group_membership WHERE user_id = $1 AND group_id = $2 AND role_in_group IN ($3, $4)',
-            [userId, group_id, 'OWNER', 'TREASURER']
-        );
-
-        if (roleCheck.rows.length === 0) {
-            return res.status(403).json({ error: 'You are not authorised to approve this withdrawal (must be OWNER or TREASURER).' });
-        }
-
-        if (pin) {
-            const pinValid = await validateTransactionPin({ pin, userId });
-            if (!pinValid) {
-                return res.status(401).json({ error: 'Invalid transaction PIN.' });
-            }
-        }
-
-        try {
-            await insertApproval(withdrawalId, userId);
-        } catch (dbError) {
-          
-            if (dbError.code === '23505') {
-                return res.status(409).json({ error: 'You have already approved this withdrawal.' });
-            }
-            throw dbError;
-        }
-
-        let currentApprovals = await countApprovalsForWithdrawal(withdrawalId);
-        let currentStatus = 'PENDING';
-
-        if (currentApprovals >= approvals_required) {
-          
-            await updateWithdrawalStatusToApproved(withdrawalId);
-            currentStatus = 'APPROVED';
-        }
-
-        return res.status(200).json({
-            status: "ok",
-            current_approvals: currentApprovals,
-            approvals_required: approvals_required,
-            withdrawal_status: currentStatus,
-            message: currentStatus === 'APPROVED' 
-                ? 'Withdrawal has reached the required approvals and is now APPROVED.' 
-                : 'Approval recorded. Waiting for more admins.'
-        });
-
-    } catch (error) {
-        console.error('Withdrawal Approval Error:', error);
-        return res.status(500).json({ message: 'An internal server error occurred.' });
+      if (dbError.code === '23505') {
+        return res.status(409).json({ error: 'You have already approved this withdrawal.' });
+      }
+      throw dbError;
     }
+
+    let currentApprovals = await countApprovalsForWithdrawal(withdrawalId);
+    let currentStatus = 'PENDING';
+
+    if (currentApprovals >= approvals_required) {
+
+      await updateWithdrawalStatusToApproved(withdrawalId);
+      currentStatus = 'APPROVED';
+    }
+
+    return res.status(200).json({
+      status: "ok",
+      current_approvals: currentApprovals,
+      approvals_required: approvals_required,
+      withdrawal_status: currentStatus,
+      message: currentStatus === 'APPROVED'
+        ? 'Withdrawal has reached the required approvals and is now APPROVED.'
+        : 'Approval recorded. Waiting for more admins.'
+    });
+
+  } catch (error) {
+    console.error('Withdrawal Approval Error:', error);
+    return res.status(500).json({ message: 'An internal server error occurred.' });
+  }
 };
 
 
 exports.rejectWithdrawal = async (req, res) => {
-    const withdrawalId = req.params.withdrawal_id;
-    const userId = req.user.id;
-    
-    try {
-        // 1. Fetch withdrawal & group rules
-        const withdrawalData = await getWithdrawalWithGroup(withdrawalId);
+  const withdrawalId = req.params.withdrawal_id;
+  const userId = req.user.id;
 
-        if (!withdrawalData) {
-            return res.status(404).json({ error: 'Withdrawal request not found.' });
-        }
+  try {
+    // 1. Fetch withdrawal & group rules
+    const withdrawalData = await getWithdrawalWithGroup(withdrawalId);
 
-        const { group_id, status } = withdrawalData;
-
-        if (status !== 'PENDING') {
-            return res.status(409).json({ error: `Withdrawal is no longer PENDING. Current status: ${status}` });
-        }
-
-        // 2. Check user role
-        const roleCheck = await pool.query(
-            'SELECT role_in_group FROM group_membership WHERE user_id = $1 AND group_id = $2 AND role_in_group IN ($3, $4)',
-            [userId, group_id, 'OWNER', 'TREASURER']
-        );
-
-        if (roleCheck.rows.length === 0) {
-            return res.status(403).json({ error: 'You are not authorised to reject this withdrawal.' });
-        }
-        
-        // 3. Mark REJECTED
-        const rejected = await updateWithdrawalStatusToRejected(withdrawalId);
-
-        return res.status(200).json({
-            status: "ok",
-            withdrawal_status: rejected.status,
-            message: 'Withdrawal successfully marked as REJECTED.'
-        });
-
-    } catch (error) {
-        console.error('Withdrawal Rejection Error:', error);
-        return res.status(500).json({ message: 'An internal server error occurred.' });
+    if (!withdrawalData) {
+      return res.status(404).json({ error: 'Withdrawal request not found.' });
     }
+
+    const { group_id, status } = withdrawalData;
+
+    if (status !== 'PENDING') {
+      return res.status(409).json({ error: `Withdrawal is no longer PENDING. Current status: ${status}` });
+    }
+
+    // 2. Check user role
+    const roleCheck = await pool.query(
+      'SELECT role_in_group FROM group_membership WHERE user_id = $1 AND group_id = $2 AND role_in_group IN ($3, $4)',
+      [userId, group_id, 'OWNER', 'TREASURER']
+    );
+
+    if (roleCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'You are not authorised to reject this withdrawal.' });
+    }
+
+    // 3. Mark REJECTED
+    const rejected = await updateWithdrawalStatusToRejected(withdrawalId);
+
+    return res.status(200).json({
+      status: "ok",
+      withdrawal_status: rejected.status,
+      message: 'Withdrawal successfully marked as REJECTED.'
+    });
+
+  } catch (error) {
+    console.error('Withdrawal Rejection Error:', error);
+    return res.status(500).json({ message: 'An internal server error occurred.' });
+  }
 };
 
 exports.groupWithdrawals = async (req, res) => {
-    try {
-        const groupId = req.params.group_id;
+  try {
+    const groupId = req.params.group_id;
 
-        if (!groupId) {
-            return res.status(400).json({ error: 'Missing group_id' });
-        }
-
-        let { status, page, pageSize } = req.query;
-
-        const allowedStatus = ['PENDING', 'APPROVED', 'DECLINED', 'PAID'];
-        if (status && !allowedStatus.includes(status)) {
-            return res.status(400).json({ error: 'Invalid status filter' });
-        }
-
-        page = parseInt(page) || 1;
-        pageSize = parseInt(pageSize) || 10;
-
-        if (pageSize > 50) pageSize = 50;
-
-        const results = await getGroupWithdrawals(
-            groupId,
-            { status, page, pageSize }
-        );
-
-        return res.status(200).json(results);
-
-    } catch (error) {
-        return res.status(500).json({ message: error.message });
+    if (!groupId) {
+      return res.status(400).json({ error: 'Missing group_id' });
     }
+
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM group_membership WHERE user_id = $1 AND group_id = $2 LIMIT 1',
+      [req.user.id, groupId]
+    );
+    if (!memberCheck.rowCount) {
+      return res.status(403).json({ error: 'You are not a member of this group' });
+    }
+
+    let { status, page, pageSize } = req.query;
+
+    const allowedStatus = ['PENDING', 'APPROVED', 'DECLINED', 'PAID'];
+    if (status && !allowedStatus.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status filter' });
+    }
+
+    page = parseInt(page) || 1;
+    pageSize = parseInt(pageSize) || 10;
+
+    if (pageSize > 50) pageSize = 50;
+
+    const results = await getGroupWithdrawals(
+      groupId,
+      { status, page, pageSize }
+    );
+
+    return res.status(200).json(results);
+
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
 };
+
+
+exports.getWithdrawalDetails = async (req, res) => {
+  try {
+    const withdrawalId = req.params.withdrawal_id;
+    const userId = req.user.id;
+
+    if (!withdrawalId) {
+      return res.status(400).json({ error: "withdrawal_id is required" });
+    }
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const detail = await getDetail(withdrawalId, userId);
+
+    if (!detail) {
+      return res.status(404).json({ error: "Withdrawal not found" });
+    }
+
+    if (detail.unauthorized) {
+      return res.status(403).json({ error: 'You are not a member of this group' });
+    }
+
+    return res.status(200).json({
+      details: detail
+    });
+
+  } catch (error) {
+    console.error("getWithdrawalDetail error:", error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+

@@ -1,4 +1,5 @@
 const groupModel = require('../../models/group/groupModels');
+const pool = require('../../db/db');
 
 exports.getBalance = async (req, res) => {
     try {
@@ -79,7 +80,9 @@ exports.getAllMygroups = async (req, res) => {
 
         const myGroups = await groupModel.getMyGroups(req.user.id);
 
-        return res.status(200).json(myGroups);
+        return res.status(200).json({
+            groups: myGroups
+        });
 
     } catch (error) {
         return res.status(500).json({ message: error.message });
@@ -99,6 +102,14 @@ exports.groupSum = async (req, res) => {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
+        const memberCheck = await pool.query(
+            'SELECT 1 FROM group_membership WHERE user_id = $1 AND group_id = $2 LIMIT 1',
+            [req.user.id, groupId]
+        );
+        if (!memberCheck.rowCount) {
+            return res.status(403).json({ error: 'You are not a member of this group' });
+        }
+
         const totalSummary = await groupModel.groupSummary(groupId);
 
         if (!totalSummary) {
@@ -109,5 +120,59 @@ exports.groupSum = async (req, res) => {
 
     } catch (error) {
         return res.status(500).json({ message: error.message });
+    }
+};
+
+
+exports.getGroupLedger = async (req, res) => {
+    try {
+        const { group_id } = req.params;
+
+        const page = parseInt(req.query.page || "1", 10);
+        const pageSize = parseInt(req.query.pageSize || "20", 10);
+
+        if (!group_id) {
+            return res.status(400).json({
+                status: "error",
+                message: "group_id parameter is required"
+            });
+        }
+
+        const memberCheck = await pool.query(
+            'SELECT 1 FROM group_membership WHERE user_id = $1 AND group_id = $2 LIMIT 1',
+            [req.user.id, group_id]
+        );
+        if (!memberCheck.rowCount) {
+            return res.status(403).json({ error: 'You are not a member of this group' });
+        }
+
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const [entries, total] = await Promise.all([
+            groupModel.getLedgerEntries(group_id, page, pageSize),
+            groupModel.getLedgerEntryCount(group_id)
+        ]);
+
+        return res.status(200).json({
+            status: "success",
+            data: {
+                pagination: {
+                    page,
+                    pageSize,
+                    total,
+                    totalPages: Math.ceil(total / pageSize)
+                },
+                entries
+            }
+        });
+
+    } catch (err) {
+        console.error("Error loading group ledger:", err);
+        return res.status(500).json({
+            status: "error",
+            message: "Internal server error"
+        });
     }
 };
