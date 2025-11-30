@@ -138,6 +138,10 @@ exports.getGroupLedger = async (req, res) => {
             });
         }
 
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
         const memberCheck = await pool.query(
             'SELECT 1 FROM group_membership WHERE user_id = $1 AND group_id = $2 LIMIT 1',
             [req.user.id, group_id]
@@ -146,9 +150,6 @@ exports.getGroupLedger = async (req, res) => {
             return res.status(403).json({ error: 'You are not a member of this group' });
         }
 
-        if (!req.user || !req.user.id) {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
 
         const [entries, total] = await Promise.all([
             groupModel.getLedgerEntries(group_id, page, pageSize),
