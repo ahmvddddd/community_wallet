@@ -78,7 +78,7 @@ Only members of the group may access this endpoint.
 
 ---
 
-3. List Group Withdrawals (Paginated)
+## Group Withdrawals (Paginated)
 
 Endpoint
 
