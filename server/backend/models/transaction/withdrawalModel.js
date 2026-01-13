@@ -39,6 +39,7 @@ exports.getWithdrawalWithGroup = async (withdrawalId) => {
             wr.group_id, 
             wr.status, 
             wr.amount_kobo, 
+            wr.requested_by,
             g.approvals_required, 
             g.approvals_cap
         FROM withdrawal_request wr

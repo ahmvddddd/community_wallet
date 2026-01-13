@@ -99,14 +99,9 @@ const pinSchema = Joi.object({
 });
 
 exports.approveWithdrawal = async (req, res) => {
-  const { error, value } = pinSchema.validate(req.body);
-  if (error) {
-    return res.status(400).json({ error: error.details[0].message });
-  }
 
   const withdrawalId = req.params.withdrawal_id;
   const userId = req.user.id;
-  const { pin } = value;
 
   try {
     const withdrawalData = await getWithdrawalWithGroup(withdrawalId);
@@ -115,26 +110,38 @@ exports.approveWithdrawal = async (req, res) => {
       return res.status(404).json({ error: 'Withdrawal request not found.' });
     }
 
-    const { group_id, status, approvals_required } = withdrawalData;
+    const { group_id, status, approvals_required, requested_by } = withdrawalData;
 
     if (status !== 'PENDING') {
       return res.status(409).json({ error: `Withdrawal is no longer PENDING. Current status: ${status}` });
     }
 
+    if (!requested_by) {
+      return res.status(500).json({
+        error: 'Withdrawal requester information is missing.'
+      });
+    }
+
+    if (requested_by === userId) {
+      return res.status(403).json({
+        error: 'You cannot approve your own withdrawal.'
+      });
+    }
+
+
+    const roles = ['OWNER', 'TREASURER'];
+
     const roleCheck = await pool.query(
-      'SELECT role_in_group FROM group_membership WHERE user_id = $1 AND group_id = $2 AND role_in_group IN ($3, $4)',
-      [userId, group_id, 'OWNER', 'TREASURER']
+      `SELECT role_in_group
+      FROM group_membership
+      WHERE user_id = $1
+        AND group_id = $2
+        AND role_in_group = ANY($3::text[])`,
+      [userId, group_id, roles]
     );
 
     if (roleCheck.rows.length === 0) {
       return res.status(403).json({ error: 'You are not authorised to approve this withdrawal (must be OWNER or TREASURER).' });
-    }
-
-    if (pin) {
-      const pinValid = await validateTransactionPin({ pin, userId });
-      if (!pinValid) {
-        return res.status(401).json({ error: 'Invalid transaction PIN.' });
-      }
     }
 
     try {
@@ -178,36 +185,55 @@ exports.rejectWithdrawal = async (req, res) => {
   const userId = req.user.id;
 
   try {
-    // 1. Fetch withdrawal & group rules
+    
     const withdrawalData = await getWithdrawalWithGroup(withdrawalId);
 
     if (!withdrawalData) {
       return res.status(404).json({ error: 'Withdrawal request not found.' });
     }
 
-    const { group_id, status } = withdrawalData;
+    const { group_id, status, requested_by } = withdrawalData;
 
     if (status !== 'PENDING') {
       return res.status(409).json({ error: `Withdrawal is no longer PENDING. Current status: ${status}` });
     }
 
-    // 2. Check user role
+    if (!requested_by) {
+      return res.status(500).json({
+        error: 'Withdrawal requester information is missing.'
+      });
+    }
+
+    if (requested_by === userId) {
+      return res.status(403).json({
+        error: 'You cannot reject your own withdrawal.'
+      });
+    }
+
+    
+    const roles = ['OWNER', 'TREASURER'];
+
     const roleCheck = await pool.query(
-      'SELECT role_in_group FROM group_membership WHERE user_id = $1 AND group_id = $2 AND role_in_group IN ($3, $4)',
-      [userId, group_id, 'OWNER', 'TREASURER']
+      `SELECT role_in_group
+      FROM group_membership
+      WHERE user_id = $1
+        AND group_id = $2
+        AND role_in_group = ANY($3::text[])`,
+      [userId, group_id, roles]
     );
+
 
     if (roleCheck.rows.length === 0) {
       return res.status(403).json({ error: 'You are not authorised to reject this withdrawal.' });
     }
 
-    // 3. Mark REJECTED
+    
     const rejected = await updateWithdrawalStatusToRejected(withdrawalId);
 
     return res.status(200).json({
       status: "ok",
       withdrawal_status: rejected.status,
-      message: 'Withdrawal successfully marked as REJECTED.'
+      message: 'Withdrawal successfully marked as DECLINED.'
     });
 
   } catch (error) {
