@@ -86,7 +86,7 @@ exports.updateWithdrawalStatusToApproved = async (withdrawalId) => {
     return result.rows[0];
 };
 
-
+// sets status to DECLINED (legacy naming)
 exports.updateWithdrawalStatusToRejected = async (withdrawalId) => {
     const q = `
         UPDATE withdrawal_request

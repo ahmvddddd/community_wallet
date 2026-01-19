@@ -6,7 +6,7 @@ const { withdrawalRequest, approveWithdrawal, rejectWithdrawal, groupWithdrawals
 
 router.post('/withdrawal-request', ensureAuth, withdrawalRequest);
 router.patch('/:withdrawal_id/approve', ensureAuth, approveWithdrawal);
-router.patch('/:withdrawal_id/reject', ensureAuth, rejectWithdrawal);
+router.patch('/:withdrawal_id/decline', ensureAuth, rejectWithdrawal);
 router.get('/:group_id/group-withdrawals', ensureAuth, groupWithdrawals);
 router.get('/:withdrawal_id/withdrawal-details', ensureAuth, getWithdrawalDetails);
 

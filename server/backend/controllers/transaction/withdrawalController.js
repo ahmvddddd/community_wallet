@@ -180,6 +180,7 @@ exports.approveWithdrawal = async (req, res) => {
 };
 
 
+// sets status to DECLINED (legacy naming)
 exports.rejectWithdrawal = async (req, res) => {
   const withdrawalId = req.params.withdrawal_id;
   const userId = req.user.id;
