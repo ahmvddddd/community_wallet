@@ -5,7 +5,7 @@ exports.getGroup = async (groupId) => {
     SELECT name FROM "group"
     WHERE id = $1
     `;
-    
+
     const result = await pool.query(q, [groupId]);
     return result.rows[0];
 };
@@ -55,8 +55,16 @@ exports.insertDeposit = async (
 
 
 exports.fetchToken = async (publicReadToken) => {
-    const q =`
-    SELECT * FROM deposits
+    const q = `
+    SELECT 
+    public_read_token,
+    group_name,
+    account_name,
+    bank_name,
+    status,
+    created_at,
+    updated_at 
+    FROM deposits
     WHERE public_read_token =$1
     `;
 
