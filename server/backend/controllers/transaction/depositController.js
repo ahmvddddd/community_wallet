@@ -44,6 +44,11 @@ exports.createDeposit = async (req, res) => {
             ledger_entry_id
         );
 
+        console.log(
+            `Read token created successfully:
+            ${publicReadToken}
+            `
+        );
         return res.status(201).json({
             public_read_token: publicReadToken
         });
@@ -57,13 +62,13 @@ exports.createDeposit = async (req, res) => {
 
 exports.getDeposit = async (req, res) => {
     try {
-        const { public_read_token } = req.params;
+        const { public_read_token, group_id } = req.params;
 
         if (!public_read_token || typeof public_read_token !== 'string') {
             return res.status(400).json({ error: "Missing required field" });
         }
 
-        const deposit = await fetchToken(public_read_token);
+        const deposit = await fetchToken(public_read_token, group_id);
 
         if (!deposit) {
             return res.status(404).json({
@@ -73,6 +78,7 @@ exports.getDeposit = async (req, res) => {
 
         res.status(200).json(deposit);
     } catch (error) {
+        console.error('Get deposit error:', error);
         return res.status(500).json({
             message: error.message
         });

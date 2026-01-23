@@ -54,7 +54,7 @@ exports.insertDeposit = async (
 };
 
 
-exports.fetchToken = async (publicReadToken) => {
+exports.fetchToken = async (publicReadToken, groupId) => {
     const q = `
     SELECT 
     public_read_token,
@@ -66,8 +66,9 @@ exports.fetchToken = async (publicReadToken) => {
     updated_at 
     FROM deposits
     WHERE public_read_token =$1
+    AND group_id = $2
     `;
 
-    const result = await pool.query(q, [publicReadToken]);
+    const result = await pool.query(q, [publicReadToken, groupId]);
     return result.rows[0];
 };
