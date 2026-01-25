@@ -61,6 +61,7 @@ exports.fetchToken = async (publicReadToken, groupId) => {
     group_name,
     account_name,
     bank_name,
+    account_number,
     status,
     created_at,
     updated_at 
@@ -71,4 +72,24 @@ exports.fetchToken = async (publicReadToken, groupId) => {
 
     const result = await pool.query(q, [publicReadToken, groupId]);
     return result.rows[0];
+};
+
+
+exports.fetchByToken = async (publicReadToken) => {
+  const q = `
+    SELECT 
+      public_read_token,
+      group_id,
+      group_name,
+      account_name,
+      bank_name,
+      account_number,
+      status,
+      created_at,
+      updated_at
+    FROM deposits
+    WHERE public_read_token = $1
+  `;
+  const result = await pool.query(q, [publicReadToken]);
+  return result.rows[0];
 };

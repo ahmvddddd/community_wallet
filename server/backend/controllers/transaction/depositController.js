@@ -4,7 +4,7 @@ let uuidv4;
     const { v4 } = await import('uuid');
     uuidv4 = v4;
 })();
-const { getGroup, insertDeposit, fetchToken } = require('../../models/transaction/depositModel');
+const { getGroup, insertDeposit, fetchToken, fetchByToken } = require('../../models/transaction/depositModel');
 
 exports.createDeposit = async (req, res) => {
     try {
@@ -83,4 +83,24 @@ exports.getDeposit = async (req, res) => {
             message: error.message
         });
     }
+};
+
+
+exports.getDepositByToken = async (req, res) => {
+  try {
+    const { public_read_token } = req.params;
+    if (!public_read_token) {
+      return res.status(400).json({ error: "public_read_token is required" });
+    }
+
+    const deposit = await fetchByToken(public_read_token);
+    if (!deposit) {
+      return res.status(404).json({ error: "Incorrect Public Read Token" });
+    }
+
+    return res.status(200).json(deposit);
+  } catch (error) {
+    console.error("Get deposit by token error:", error);
+    return res.status(500).json({ message: error.message });
+  }
 };
