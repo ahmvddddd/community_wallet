@@ -86,7 +86,22 @@ These entities support the MVP user flows.
 
 ---
 
-## 8. WebhookEvent (Later)
+## 8. Deposits
+
+- id (UUID)
+- public_read_token (UUID)
+- group_id (UUID)
+- group_name (varchar)
+- account_id (UUID)
+- account_number (varchar)
+- account_name (varchar)
+- bank_name (varchar)
+- status (varchar)
+- ledger_entry_id (UUID)
+- createdAt
+- updatedAt
+
+## 9. WebhookEvent (Later)
 
 - id (UUID)
 - eventType ("DEPOSIT")
@@ -96,6 +111,7 @@ These entities support the MVP user flows.
 - createdAt
 
 ---
+
 
 ## Notes
 - Amounts stored in **kobo** (INTEGER)

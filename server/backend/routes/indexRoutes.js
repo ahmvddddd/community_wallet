@@ -11,6 +11,7 @@ const transactionPinRoutes = require('./transaction/transactionPinRoutes');
 const withdrawalRoutes = require('./transaction/withdrawalRoutes');
 const payoutRoutes = require('./transaction/payoutRoutes');
 const depositRoutes = require('./transaction/depositRoutes');
+const groupAdminRoutes = require('./group_admin/groupAdminRoutes');
 
 router.use('/groups', groupRoutes);
 router.use('/auth', authRoutes);
@@ -20,6 +21,7 @@ router.use('/share-routes', shareRoutes);
 router.use('/account', accountRoutes);
 router.use('/payout', payoutRoutes);
 router.use('/deposits', depositRoutes);
+router.use('/group-admin', groupAdminRoutes);
 
 module.exports = router;
 
