@@ -42,3 +42,35 @@ exports.fetchDeposits = async (user_id) => {
 
   return pool.query(q, [user_id]);
 };
+
+exports.fetchWithdrawals = async (user_id, { limit = 20, offset = 0 } = {}) => {
+  const q = `
+    SELECT
+      wr.id,
+      wr.group_id,
+      g.name AS group_name,
+      wr.amount_kobo,
+      wr.beneficiary,
+      wr.reason,
+      wr.status,
+      wr.requested_by,
+      wr.expires_at,
+      wr.created_at,
+      wr.executed_at,
+      wr.declined_by,
+      wr.declined_at,
+      wr.decline_reason
+    FROM withdrawal_request wr
+    INNER JOIN "group" g
+      ON g.id = wr.group_id
+    INNER JOIN group_membership gm
+      ON gm.group_id = g.id
+    WHERE
+      gm.user_id = $1
+      AND gm.role_in_group IN ('OWNER', 'TREASURER')
+    ORDER BY wr.created_at DESC
+    LIMIT $2 OFFSET $3
+  `;
+
+  return pool.query(q, [user_id, limit, offset]);
+};
