@@ -54,3 +54,34 @@ exports.fetchWithdrawals = async (req, res, next) => {
   }
 };
 
+
+exports.adminCheck = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: 'Unauthorized: user not authenticated',
+      });
+    }
+
+    const hasAdminRole = await checkUser(userId);
+
+    if (!hasAdminRole) {
+      return res.status(403).json({
+        message: 'Access denied. Admin privileges required.',
+      });
+    }
+
+    return res.status(200).json({
+      isAdmin: true,
+    });
+  } catch (error) {
+    console.error('Error checking admin status:', error);
+    return res.status(500).json({
+      message: 'Internal server error',
+    });
+  }
+};
+
+
