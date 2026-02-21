@@ -99,9 +99,10 @@ const pinSchema = Joi.object({
 });
 
 exports.approveWithdrawal = async (req, res) => {
-
   const withdrawalId = req.params.withdrawal_id;
   const userId = req.user.id;
+
+  const client = await pool.connect();
 
   try {
     const withdrawalData = await getWithdrawalWithGroup(withdrawalId);
@@ -113,7 +114,9 @@ exports.approveWithdrawal = async (req, res) => {
     const { group_id, status, approvals_required, requested_by } = withdrawalData;
 
     if (status !== 'PENDING') {
-      return res.status(409).json({ error: `Withdrawal is no longer PENDING. Current status: ${status}` });
+      return res.status(409).json({
+        error: `Withdrawal is no longer PENDING. Current status: ${status}`
+      });
     }
 
     if (!requested_by) {
@@ -128,54 +131,72 @@ exports.approveWithdrawal = async (req, res) => {
       });
     }
 
-
     const roles = ['OWNER', 'TREASURER'];
 
     const roleCheck = await pool.query(
-      `SELECT role_in_group
+      `
+      SELECT role_in_group
       FROM group_membership
       WHERE user_id = $1
         AND group_id = $2
-        AND role_in_group = ANY($3::text[])`,
+        AND role_in_group = ANY($3::text[])
+      `,
       [userId, group_id, roles]
     );
 
     if (roleCheck.rows.length === 0) {
-      return res.status(403).json({ error: 'You are not authorised to approve this withdrawal (must be OWNER or TREASURER).' });
+      return res.status(403).json({
+        error: 'You are not authorised to approve this withdrawal (must be OWNER or TREASURER).'
+      });
     }
+    
+    // Transaction to prevent race conditions between approvers
+    await client.query('BEGIN');
 
     try {
-      await insertApproval(withdrawalId, userId);
+      await insertApproval(withdrawalId, userId, client);
     } catch (dbError) {
-
       if (dbError.code === '23505') {
-        return res.status(409).json({ error: 'You have already approved this withdrawal.' });
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: 'You have already approved this withdrawal.'
+        });
       }
       throw dbError;
     }
 
-    let currentApprovals = await countApprovalsForWithdrawal(withdrawalId);
-    let currentStatus = 'PENDING';
+    const currentApprovals = await countApprovalsForWithdrawal(withdrawalId, client);
+
+    let updatedWithdrawal = null;
 
     if (currentApprovals >= approvals_required) {
-
-      await updateWithdrawalStatusToApproved(withdrawalId);
-      currentStatus = 'APPROVED';
+      // NEW: status update happens inside the same transaction
+      updatedWithdrawal = await updateWithdrawalStatusToApproved(withdrawalId, client);
     }
 
+    await client.query('COMMIT');
+
     return res.status(200).json({
-      status: "ok",
+      status: 'ok',
       current_approvals: currentApprovals,
-      approvals_required: approvals_required,
-      withdrawal_status: currentStatus,
-      message: currentStatus === 'APPROVED'
+      approvals_required,
+      withdrawal: updatedWithdrawal || {
+        id: withdrawalId,
+        status: 'PENDING'
+      },
+      message: updatedWithdrawal
         ? 'Withdrawal has reached the required approvals and is now APPROVED.'
         : 'Approval recorded. Waiting for more admins.'
     });
 
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Withdrawal Approval Error:', error);
-    return res.status(500).json({ message: 'An internal server error occurred.' });
+    return res.status(500).json({
+      message: 'An internal server error occurred.'
+    });
+  } finally {
+    client.release();
   }
 };
 
@@ -186,7 +207,6 @@ exports.rejectWithdrawal = async (req, res) => {
   const userId = req.user.id;
 
   try {
-    
     const withdrawalData = await getWithdrawalWithGroup(withdrawalId);
 
     if (!withdrawalData) {
@@ -196,7 +216,9 @@ exports.rejectWithdrawal = async (req, res) => {
     const { group_id, status, requested_by } = withdrawalData;
 
     if (status !== 'PENDING') {
-      return res.status(409).json({ error: `Withdrawal is no longer PENDING. Current status: ${status}` });
+      return res.status(409).json({
+        error: `Withdrawal is no longer PENDING. Current status: ${status}`
+      });
     }
 
     if (!requested_by) {
@@ -211,35 +233,38 @@ exports.rejectWithdrawal = async (req, res) => {
       });
     }
 
-    
     const roles = ['OWNER', 'TREASURER'];
 
     const roleCheck = await pool.query(
-      `SELECT role_in_group
+      `
+      SELECT role_in_group
       FROM group_membership
       WHERE user_id = $1
         AND group_id = $2
-        AND role_in_group = ANY($3::text[])`,
+        AND role_in_group = ANY($3::text[])
+      `,
       [userId, group_id, roles]
     );
 
-
     if (roleCheck.rows.length === 0) {
-      return res.status(403).json({ error: 'You are not authorised to reject this withdrawal.' });
+      return res.status(403).json({
+        error: 'You are not authorised to reject this withdrawal.'
+      });
     }
 
-    
     const rejected = await updateWithdrawalStatusToRejected(withdrawalId);
 
     return res.status(200).json({
-      status: "ok",
-      withdrawal_status: rejected.status,
+      status: 'ok',
+      withdrawal: rejected, // NEW: return updated row for UI sync
       message: 'Withdrawal successfully marked as DECLINED.'
     });
 
   } catch (error) {
     console.error('Withdrawal Rejection Error:', error);
-    return res.status(500).json({ message: 'An internal server error occurred.' });
+    return res.status(500).json({
+      message: 'An internal server error occurred.'
+    });
   }
 };
 
@@ -316,4 +341,3 @@ exports.getWithdrawalDetails = async (req, res) => {
     return res.status(500).json({ message: error.message });
   }
 };
-

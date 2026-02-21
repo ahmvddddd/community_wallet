@@ -52,51 +52,53 @@ exports.getWithdrawalWithGroup = async (withdrawalId) => {
 };
 
 
-exports.insertApproval = async (withdrawalId, approverUserId) => {
+exports.insertApproval = async (withdrawalId, approverUserId, client = pool) => {
+    // NEW: client param allows transaction-safe usage
     const q = `
-        INSERT INTO approval (withdrawal_id, approver_user_id)
-        VALUES ($1, $2)
-        RETURNING *;
+      INSERT INTO approval (withdrawal_id, approver_user_id)
+      VALUES ($1, $2)
+      RETURNING *;
     `;
-
-    const result = await pool.query(q, [withdrawalId, approverUserId]);
+    const result = await client.query(q, [withdrawalId, approverUserId]);
     return result.rows[0];
-};
+  };
 
 
-exports.countApprovalsForWithdrawal = async (withdrawalId) => {
+  exports.countApprovalsForWithdrawal = async (withdrawalId, client = pool) => {
+    // NEW: client param allows consistent reads inside transaction
     const q = `
-        SELECT count(*)::int AS approval_count
-        FROM approval
-        WHERE withdrawal_id = $1;
+      SELECT count(*)::int AS approval_count
+      FROM approval
+      WHERE withdrawal_id = $1;
     `;
-    const result = await pool.query(q, [withdrawalId]);
-    return result.rows[0] ? result.rows[0].approval_count : 0;
-};
+    const result = await client.query(q, [withdrawalId]);
+    return result.rows[0]?.approval_count || 0;
+  };
 
 
-exports.updateWithdrawalStatusToApproved = async (withdrawalId) => {
+  exports.updateWithdrawalStatusToApproved = async (withdrawalId, client = pool) => {
+    // NEW: executed inside the same transaction as approval insert
     const q = `
-        UPDATE withdrawal_request
-        SET status = 'APPROVED'
-        WHERE id = $1 AND status = 'PENDING'
-        RETURNING id, group_id, status;
+      UPDATE withdrawal_request
+      SET status = 'APPROVED'
+      WHERE id = $1 AND status = 'PENDING'
+      RETURNING id, group_id, status;
     `;
-    const result = await pool.query(q, [withdrawalId]);
+    const result = await client.query(q, [withdrawalId]);
     return result.rows[0];
-};
+  };
 
 // sets status to DECLINED (legacy naming)
 exports.updateWithdrawalStatusToRejected = async (withdrawalId) => {
     const q = `
-        UPDATE withdrawal_request
-        SET status = 'DECLINED'
-        WHERE id = $1 AND status = 'PENDING'
-        RETURNING id, group_id, status;
+      UPDATE withdrawal_request
+      SET status = 'DECLINED'
+      WHERE id = $1 AND status = 'PENDING'
+      RETURNING id, group_id, status;
     `;
     const result = await pool.query(q, [withdrawalId]);
     return result.rows[0];
-};
+  };
 
 
 exports.getGroupWithdrawals = async (groupId, { status, page, pageSize }) => {
