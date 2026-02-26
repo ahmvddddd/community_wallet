@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const { errorHandler } = require('./middlewares/error/errorMiddleware');
 const apiRoutes = require('./routes/indexRoutes');
 const initServer = require('./db/initServer'); 
@@ -14,6 +15,7 @@ app.use(cors({
     origin: "http://localhost:3000",
     credentials: true,   
   }));
+app.use(cookieParser());
 app.use(express.json());
 
 

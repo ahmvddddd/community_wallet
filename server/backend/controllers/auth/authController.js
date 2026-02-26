@@ -87,6 +87,15 @@ exports.login = async (req, res) => {
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
+//     res.cookie("refresh_token", rawRefresh, {
+//   httpOnly: true,
+//   secure: false,              // force off in dev so http://localhost works
+//   sameSite: "lax",
+//   path: "/",                  // TEMP: make it available to all routes
+//   maxAge: 30 * 24 * 60 * 60 * 1000,
+// });
+
+
     await audit(client, user.id, 'LOGIN', req.ip, req.headers['user-agent']);
 
     await client.query('COMMIT');
@@ -122,7 +131,6 @@ exports.refresh = async (req, res) => {
 
     const t = r.rows[0];
 
-
     if (t.revoked || new Date(t.expires_at) < new Date()) {
       return res.status(401).json({ error: 'Token expired' });
     }
@@ -152,6 +160,7 @@ exports.refresh = async (req, res) => {
     res.cookie('refresh_token', newRaw, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
+      // secure: false,
       sameSite: 'lax',
       path: '/api/v1/auth/refresh',
       maxAge: 30 * 24 * 60 * 60 * 1000

@@ -102,9 +102,8 @@ exports.approveWithdrawal = async (req, res) => {
   const withdrawalId = req.params.withdrawal_id;
   const userId = req.user.id;
 
-  const client = await pool.connect();
-
   try {
+
     const withdrawalData = await getWithdrawalWithGroup(withdrawalId);
 
     if (!withdrawalData) {
@@ -146,11 +145,11 @@ exports.approveWithdrawal = async (req, res) => {
 
     if (roleCheck.rows.length === 0) {
       return res.status(403).json({
-        error: 'You are not authorised to approve this withdrawal (must be OWNER or TREASURER).'
+        error: 'You are not authorised to approve this withdrawal.'
       });
     }
-    
-    // Transaction to prevent race conditions between approvers
+
+    const client = await pool.connect();
     await client.query('BEGIN');
 
     try {
@@ -165,13 +164,14 @@ exports.approveWithdrawal = async (req, res) => {
       throw dbError;
     }
 
-    const currentApprovals = await countApprovalsForWithdrawal(withdrawalId, client);
+    const currentApprovals =
+      await countApprovalsForWithdrawal(withdrawalId, client);
 
     let updatedWithdrawal = null;
 
     if (currentApprovals >= approvals_required) {
-      // NEW: status update happens inside the same transaction
-      updatedWithdrawal = await updateWithdrawalStatusToApproved(withdrawalId, client);
+      updatedWithdrawal =
+        await updateWithdrawalStatusToApproved(withdrawalId, client);
     }
 
     await client.query('COMMIT');
@@ -190,19 +190,24 @@ exports.approveWithdrawal = async (req, res) => {
     });
 
   } catch (error) {
-    await client.query('ROLLBACK');
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {
+      // ignore rollback failure
+    }
+
     console.error('Withdrawal Approval Error:', error);
     return res.status(500).json({
       message: 'An internal server error occurred.'
     });
+
   } finally {
     client.release();
   }
 };
 
-
 // sets status to DECLINED (legacy naming)
-exports.rejectWithdrawal = async (req, res) => {
+exports.declineWithdrawal = async (req, res) => {
   const withdrawalId = req.params.withdrawal_id;
   const userId = req.user.id;
 
@@ -229,7 +234,7 @@ exports.rejectWithdrawal = async (req, res) => {
 
     if (requested_by === userId) {
       return res.status(403).json({
-        error: 'You cannot reject your own withdrawal.'
+        error: 'You cannot decline your own withdrawal.'
       });
     }
 
@@ -248,15 +253,15 @@ exports.rejectWithdrawal = async (req, res) => {
 
     if (roleCheck.rows.length === 0) {
       return res.status(403).json({
-        error: 'You are not authorised to reject this withdrawal.'
+        error: 'You are not authorised to decline this withdrawal.'
       });
     }
 
-    const rejected = await updateWithdrawalStatusToRejected(withdrawalId);
+    const declined = await updateWithdrawalStatusToRejected(withdrawalId);
 
     return res.status(200).json({
       status: 'ok',
-      withdrawal: rejected, // NEW: return updated row for UI sync
+      withdrawal: declined, // NEW: return updated row for UI sync
       message: 'Withdrawal successfully marked as DECLINED.'
     });
 
