@@ -160,7 +160,7 @@ exports.refresh = async (req, res) => {
     res.cookie('refresh_token', newRaw, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      // secure: false,
+      secure: false,
       sameSite: 'lax',
       path: '/api/v1/auth/refresh',
       maxAge: 30 * 24 * 60 * 60 * 1000
