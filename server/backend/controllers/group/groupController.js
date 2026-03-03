@@ -177,3 +177,27 @@ exports.getGroupLedger = async (req, res) => {
         });
     }
 };
+
+
+exports.groupMembers = async (req, res) => {
+  try {
+    const groupId = req.params.group_id;
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    const offset = Number(req.query.offset) || 0;
+
+    // same auth + membership check as you already have…
+
+    const [members, total] = await Promise.all([
+      groupModel.groupMembers(groupId, { limit, offset }),
+      groupModel.groupMemberCount(groupId),
+    ]);
+
+    return res.status(200).json({
+      members,
+      pagination: { limit, offset, total },
+    });
+  } catch (error) {
+    console.error("groupMembers error:", error);
+    return res.status(500).json({ message: error.message });
+  }
+};

@@ -1,6 +1,6 @@
 const pool = require('../../db/db');
 const { decryptFields } = require('../../utils/secureFields');
-const { LEDGER_SECURE_FIELDS } = require('../../utils/secureFieldMaps');
+const { LEDGER_SECURE_FIELDS, USER_SECURE_FIELDS } = require('../../utils/secureFieldMaps');
 
 
 exports.getBalance = async (groupId) => {
@@ -184,4 +184,38 @@ exports.getLedgerEntryCount = async (groupId) => {
   const q = `SELECT COUNT(*) FROM ledger_entry WHERE group_id = $1`;
   const { rows } = await pool.query(q, [groupId]);
   return parseInt(rows[0].count, 10);
+};
+
+
+exports.groupMembers = async (groupId, { limit = 50, offset = 0 } = {}) => {
+  const q = `
+    SELECT
+      gm.user_id,
+      u.name,
+      u.email,
+      gm.role_in_group,
+      gm.joined_at
+    FROM group_membership gm
+    JOIN "user" u ON u.id = gm.user_id
+    WHERE gm.group_id = $1
+    ORDER BY
+      CASE gm.role_in_group
+        WHEN 'OWNER' THEN 1
+        WHEN 'TREASURER' THEN 2
+        ELSE 3
+      END,
+      u.name ASC
+    LIMIT $2 OFFSET $3
+  `;
+  const res = await pool.query(q, [groupId, limit, offset]);
+  const decrypted = res.rows.map((row) =>
+    decryptFields(row, USER_SECURE_FIELDS)
+  );
+  return decrypted;
+};
+
+exports.groupMemberCount = async (groupId) => {
+  const q = `SELECT COUNT(*)::int AS count FROM group_membership WHERE group_id = $1`;
+  const res = await pool.query(q, [groupId]);
+  return res.rows[0]?.count ?? 0;
 };
