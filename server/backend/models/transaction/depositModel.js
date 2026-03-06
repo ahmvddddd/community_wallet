@@ -93,3 +93,89 @@ exports.fetchByToken = async (publicReadToken) => {
   const result = await pool.query(q, [publicReadToken]);
   return result.rows[0];
 };
+
+
+exports.getGroupDeposits = async ({
+    groupId,
+    search,
+    status,
+    bankName,
+    accountNumber,
+    startDate,
+    endDate,
+    limit,
+    offset
+}) => {
+
+    let conditions = [`group_id = $1`];
+    let values = [groupId];
+    let index = 2;
+
+    if (search) {
+        conditions.push(`(
+            account_name ILIKE $${index}
+            OR bank_name ILIKE $${index}
+            OR account_number ILIKE $${index}
+            OR public_read_token ILIKE $${index}
+        )`);
+        values.push(`%${search}%`);
+        index++;
+    }
+
+    if (status) {
+        conditions.push(`status = $${index}`);
+        values.push(status);
+        index++;
+    }
+
+    if (bankName) {
+        conditions.push(`bank_name ILIKE $${index}`);
+        values.push(`%${bankName}%`);
+        index++;
+    }
+
+    if (accountNumber) {
+        conditions.push(`account_number ILIKE $${index}`);
+        values.push(`%${accountNumber}%`);
+        index++;
+    }
+
+    if (startDate) {
+        conditions.push(`created_at >= $${index}`);
+        values.push(startDate);
+        index++;
+    }
+
+    if (endDate) {
+        conditions.push(`created_at <= $${index}`);
+        values.push(endDate);
+        index++;
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const q = `
+        SELECT
+            id,
+            public_read_token,
+            group_id,
+            group_name,
+            account_name,
+            bank_name,
+            account_number,
+            status,
+            created_at,
+            updated_at
+        FROM deposits
+        ${whereClause}
+        ORDER BY created_at DESC
+        LIMIT $${index}
+        OFFSET $${index + 1}
+    `;
+
+    values.push(limit);
+    values.push(offset);
+
+    const result = await pool.query(q, values);
+    return result.rows;
+};

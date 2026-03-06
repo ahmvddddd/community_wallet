@@ -187,8 +187,26 @@ exports.getLedgerEntryCount = async (groupId) => {
 };
 
 
-exports.groupMembers = async (groupId, { limit = 50, offset = 0 } = {}) => {
-  const q = `
+exports.groupMembers = async (
+  groupId,
+  { limit = 50, offset = 0, q = null } = {}
+) => {
+  const values = [groupId];
+  let idx = 2;
+
+  let searchClause = "";
+  if (q) {
+    searchClause = `
+      AND (
+        LOWER(u.name) LIKE LOWER($${idx})
+        OR LOWER(u.email) LIKE LOWER($${idx})
+      )
+    `;
+    values.push(`%${q}%`);
+    idx++;
+  }
+
+  const qText = `
     SELECT
       gm.user_id,
       u.name,
@@ -198,6 +216,7 @@ exports.groupMembers = async (groupId, { limit = 50, offset = 0 } = {}) => {
     FROM group_membership gm
     JOIN "user" u ON u.id = gm.user_id
     WHERE gm.group_id = $1
+    ${searchClause}
     ORDER BY
       CASE gm.role_in_group
         WHEN 'OWNER' THEN 1
@@ -205,17 +224,41 @@ exports.groupMembers = async (groupId, { limit = 50, offset = 0 } = {}) => {
         ELSE 3
       END,
       u.name ASC
-    LIMIT $2 OFFSET $3
+    LIMIT $${idx} OFFSET $${idx + 1}
   `;
-  const res = await pool.query(q, [groupId, limit, offset]);
-  const decrypted = res.rows.map((row) =>
+
+  values.push(limit, offset);
+
+  const res = await pool.query(qText, values);
+  return res.rows.map((row) =>
     decryptFields(row, USER_SECURE_FIELDS)
   );
-  return decrypted;
 };
 
-exports.groupMemberCount = async (groupId) => {
-  const q = `SELECT COUNT(*)::int AS count FROM group_membership WHERE group_id = $1`;
-  const res = await pool.query(q, [groupId]);
+exports.groupMemberCount = async (groupId, q = null) => {
+  const values = [groupId];
+  let idx = 2;
+
+  let searchClause = "";
+  if (q) {
+    searchClause = `
+      AND (
+        LOWER(u.name) LIKE LOWER($${idx})
+        OR LOWER(u.email) LIKE LOWER($${idx})
+      )
+    `;
+    values.push(`%${q}%`);
+    idx++;
+  }
+
+  const qText = `
+    SELECT COUNT(*)::int AS count
+    FROM group_membership gm
+    JOIN "user" u ON u.id = gm.user_id
+    WHERE gm.group_id = $1
+    ${searchClause}
+  `;
+
+  const res = await pool.query(qText, values);
   return res.rows[0]?.count ?? 0;
 };

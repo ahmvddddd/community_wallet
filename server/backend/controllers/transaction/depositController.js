@@ -4,7 +4,8 @@ let uuidv4;
     const { v4 } = await import('uuid');
     uuidv4 = v4;
 })();
-const { getGroup, insertDeposit, fetchToken, fetchByToken } = require('../../models/transaction/depositModel');
+const pool = require('../../db/db');
+const { getGroup, insertDeposit, fetchToken, fetchByToken, getGroupDeposits } = require('../../models/transaction/depositModel');
 
 exports.createDeposit = async (req, res) => {
     try {
@@ -87,20 +88,93 @@ exports.getDeposit = async (req, res) => {
 
 
 exports.getDepositByToken = async (req, res) => {
-  try {
-    const { public_read_token } = req.params;
-    if (!public_read_token) {
-      return res.status(400).json({ error: "public_read_token is required" });
-    }
+    try {
+        const { public_read_token } = req.params;
+        if (!public_read_token) {
+            return res.status(400).json({ error: "public_read_token is required" });
+        }
 
-    const deposit = await fetchByToken(public_read_token);
-    if (!deposit) {
-      return res.status(404).json({ error: "Incorrect Public Read Token" });
-    }
+        const deposit = await fetchByToken(public_read_token);
+        if (!deposit) {
+            return res.status(404).json({ error: "Incorrect Public Read Token" });
+        }
 
-    return res.status(200).json(deposit);
-  } catch (error) {
-    console.error("Get deposit by token error:", error);
-    return res.status(500).json({ message: error.message });
-  }
+        return res.status(200).json(deposit);
+    } catch (error) {
+        console.error("Get deposit by token error:", error);
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+
+exports.getGroupDeposits = async (req, res) => {
+    try {
+        const {
+            search,
+            status,
+            bankName,
+            accountNumber,
+            startDate,
+            endDate,
+            page = 1,
+            limit = 50
+        } = req.query;
+
+        const groupId = req.params.group_id;
+
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        if (!groupId) {
+            return res.status(400).json({
+                success: false,
+                message: "groupId is required"
+            });
+        }
+
+        // Check membership
+        const memberResult = await pool.query(
+            'SELECT user_id FROM group_membership WHERE user_id = $1 AND group_id = $2',
+            [userId, groupId],
+        );
+
+        if (memberResult.rows.length === 0) {
+            return res.status(403).json({
+                error: 'You are not authorised to view deposits for this group',
+            });
+        }
+
+        const parsedPage = parseInt(page);
+        const parsedLimit = Math.min(parseInt(limit) || 50, 100);
+        const offset = (parsedPage - 1) * parsedLimit;
+
+        const deposits = await getGroupDeposits({
+            groupId,
+            search,
+            status,
+            bankName,
+            accountNumber,
+            startDate,
+            endDate,
+            limit: parsedLimit,
+            offset
+        });
+
+        res.status(200).json({
+            success: true,
+            page: parsedPage,
+            limit: parsedLimit,
+            data: deposits
+        });
+
+    } catch (error) {
+        console.error("Fetch deposits error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch deposits"
+        });
+    }
 };
