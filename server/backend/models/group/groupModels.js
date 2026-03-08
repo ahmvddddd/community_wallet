@@ -262,3 +262,52 @@ exports.groupMemberCount = async (groupId, q = null) => {
   const res = await pool.query(qText, values);
   return res.rows[0]?.count ?? 0;
 };
+
+
+// exports.getGroupDepositAccount = async (groupId) => {
+//   const q = `
+//     SELECT
+//       id,
+//       group_id,
+//       virtual_account_number,
+//       provider_ref,
+//       created_at
+//     FROM account
+//     WHERE group_id = $1
+//     LIMIT 1
+//   `;
+
+//   const res = await pool.query(q, [groupId]);
+
+//   if (res.rows.length === 0) {
+//     return null;
+//   }
+
+//   return res.rows[0];
+// };
+
+exports.getGroupDepositAccount = async (groupId) => {
+  const q = `
+    SELECT
+      a.id,
+      a.group_id,
+      a.virtual_account_number,
+      a.provider_ref,
+      a.bank_name,
+      a.created_at,
+      g.name AS group_name
+    FROM account a
+    JOIN "group" g
+      ON g.id = a.group_id
+    WHERE a.group_id = $1
+    LIMIT 1
+  `;
+
+  const res = await pool.query(q, [groupId]);
+
+  if (res.rows.length === 0) {
+    return null;
+  }
+
+  return res.rows[0];
+};

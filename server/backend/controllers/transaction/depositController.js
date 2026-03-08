@@ -5,7 +5,7 @@ let uuidv4;
     uuidv4 = v4;
 })();
 const pool = require('../../db/db');
-const { getGroup, insertDeposit, fetchToken, fetchByToken, getGroupDeposits } = require('../../models/transaction/depositModel');
+const { getGroup, insertDeposit, fetchToken, fetchByToken, getGroupDeposits, countGroupDeposits } = require('../../models/transaction/depositModel');
 
 exports.createDeposit = async (req, res) => {
     try {
@@ -162,10 +162,21 @@ exports.getGroupDeposits = async (req, res) => {
             offset
         });
 
-        res.status(200).json({
+        const total = await countGroupDeposits({
+            groupId,
+            search,
+            status,
+            bankName,
+            accountNumber,
+            startDate,
+            endDate
+        });
+
+        return res.status(200).json({
             success: true,
             page: parsedPage,
             limit: parsedLimit,
+            total,
             data: deposits
         });
 
@@ -178,3 +189,4 @@ exports.getGroupDeposits = async (req, res) => {
         });
     }
 };
+

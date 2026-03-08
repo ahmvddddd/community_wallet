@@ -179,3 +179,69 @@ exports.getGroupDeposits = async ({
     const result = await pool.query(q, values);
     return result.rows;
 };
+
+exports.countGroupDeposits = async ({
+  groupId,
+  search,
+  status,
+  bankName,
+  accountNumber,
+  startDate,
+  endDate
+}) => {
+  let conditions = [`group_id = $1`];
+  let values = [groupId];
+  let index = 2;
+
+  if (search) {
+    conditions.push(`(
+      account_name ILIKE $${index}
+      OR bank_name ILIKE $${index}
+      OR account_number ILIKE $${index}
+      OR public_read_token ILIKE $${index}
+    )`);
+    values.push(`%${search}%`);
+    index++;
+  }
+
+  if (status) {
+    conditions.push(`status = $${index}`);
+    values.push(status);
+    index++;
+  }
+
+  if (bankName) {
+    conditions.push(`bank_name ILIKE $${index}`);
+    values.push(`%${bankName}%`);
+    index++;
+  }
+
+  if (accountNumber) {
+    conditions.push(`account_number ILIKE $${index}`);
+    values.push(`%${accountNumber}%`);
+    index++;
+  }
+
+  if (startDate) {
+    conditions.push(`created_at >= $${index}`);
+    values.push(startDate);
+    index++;
+  }
+
+  if (endDate) {
+    conditions.push(`created_at <= $${index}`);
+    values.push(endDate);
+    index++;
+  }
+
+  const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+  const q = `
+    SELECT COUNT(*)::int AS count
+    FROM deposits
+    ${whereClause}
+  `;
+
+  const result = await pool.query(q, values);
+  return result.rows[0]?.count ?? 0;
+};

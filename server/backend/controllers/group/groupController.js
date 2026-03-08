@@ -199,3 +199,70 @@ exports.groupMembers = async (req, res) => {
       return res.status(500).json({ message: error.message });
     }
   };
+
+  
+// exports.getGroupDepositAccount = async (req, res) => {
+//   try {
+//     const { group_id } = req.params;
+
+//     if (!req.user || !req.user.id) {
+//             return res.status(401).json({ error: 'Unauthorized' });
+//         }
+
+//     const account = await groupModel.getGroupDepositAccount(group_id);
+
+//     if (!account) {
+//       return res.status(404).json({
+//         error: "GROUP_ACCOUNT_NOT_FOUND",
+//         message: "No deposit account has been created for this group",
+//       });
+//     }
+
+//     return res.json({
+//       group_id: account.group_id,
+//       account_number: account.virtual_account_number,
+//       provider_reference: account.provider_ref,
+//       created_at: account.created_at,
+//     });
+//   } catch (err) {
+//     console.error("getGroupDepositAccount error:", err);
+
+//     return res.status(500).json({
+//       error: "FAILED_TO_FETCH_GROUP_ACCOUNT",
+//     });
+//   }
+// };
+
+exports.getGroupDepositAccount = async (req, res) => {
+  try {
+    const { group_id } = req.params;
+
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const account = await groupModel.getGroupDepositAccount(group_id);
+
+    if (!account) {
+      return res.status(404).json({
+        error: "GROUP_ACCOUNT_NOT_FOUND",
+        message: "No deposit account has been created for this group",
+      });
+    }
+
+    return res.json({
+      group_id: account.group_id,
+      group_name: account.group_name,
+      account_number: account.virtual_account_number,
+      bank_name: account.bank_name,
+      provider_reference: account.provider_ref,
+      created_at: account.created_at,
+    });
+  } catch (err) {
+    console.error("getGroupDepositAccount error:", err);
+
+    return res.status(500).json({
+      error: "FAILED_TO_FETCH_GROUP_ACCOUNT",
+    });
+  }
+};

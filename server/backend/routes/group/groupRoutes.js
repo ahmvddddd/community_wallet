@@ -10,5 +10,6 @@ router.get('/my-groups', ensureAuth, group.getAllMygroups);
 router.get('/:group_id/group-summary', ensureAuth, group.groupSum);
 router.get('/:group_id/ledger-snapshot', ensureAuth, group.getGroupLedger);
 router.get("/:group_id/members", ensureAuth, group.groupMembers);
+router.get("/:group_id/account", ensureAuth, group.getGroupDepositAccount);
 
 module.exports = router;
