@@ -1,7 +1,6 @@
 # Project v1 Completion & Refactoring Roadmap
 
-This document outlines the operational roadmap and technical blueprint for finalizing **v1** of the application. The primary objectives are integrating static frontend user interfaces with live backend services, restructuring project architecture for maintainability and security, enforcing request validation and rate limiting, and completing end-to-end verification and documentation.
-
+This document outlines the operational roadmap and technical blueprint for finalizing **v1** of the application. The primary objectives are integrating static frontend user interfaces with backend services, restructuring project architecture for maintainability and security, enforcing request validation and rate limiting, and completing end-to-end verification and documentation.
 
 ---
 
@@ -19,30 +18,47 @@ This document outlines the operational roadmap and technical blueprint for final
 
 #### 2. Complete Withdrawal Page & Withdrawal Actions (`/withdrawals`)
 - **Current State:** Static withdrawal layout and modal triggers.
-- **Goal:** Enable live payout processing, pin/security checks, and action handling.
+- **Goal:** Enable simulated deposits and withdrawals to and from group accounts, pin/security checks, and action handling.
 - **Key Deliverables:**
-  - Form validation for withdrawal amounts, target bank accounts/destinations, and transaction PIN verification.
+  - Form validation for withdrawal amounts and transaction PIN verification.
   - User feedback triggers (toast notifications, confirmation modals, success state routes).
 
-#### 3. Auth Folder Restructuring
-- **Goal:** Establish a modular, maintainable structure for authentication assets, state, and guards.
+#### 3. Auth Folder Restructuring & Access Control Matrix
+- **Goal:** Establish a modular, maintainable structure for authentication assets, state, and role-based route guards.
 - **Target Structure:**
   ```text
   src/
   ├── auth/
-  │   ├── components/      # Auth-specific UI (LoginForm, ProtectedRoute, MFA)
+  │   ├── components/      # Auth-specific UI (LoginForm, ProtectedRoute)
   │   ├── context/         # Auth Provider & State Context
   │   ├── hooks/           # useAuth, useSession, usePermissions
-  │   ├── services/        # Auth API calls (login, logout, refresh, OTP)
+  │   ├── services/        # Auth API calls (login, logout, refresh)
   │   ├── utils/           # Token storage, decoded JWT helpers
   │   └── types/           # Auth interfaces & type definitions
   ```
+- **Access Control & Route Hierarchy:**
+  - **Public Routes:** Open to all unauthenticated and public users.
+    - Auth Pages (Login, Register, Forgot Password)
+    - Landing Pages & Public Marketing Pages
+  - **Authorized Group Member Routes:** Accessible only to authenticated members belonging to a group.
+    - Groups (`/groups`)
+    - Withdrawals (`/withdrawals`)
+    - Ledgers (`/ledgers`)
+    - Deposit Tracking (`/deposit/tracking`)
+  - **Group Admin Routes:** Restricted strictly to users with Group Admin privilege roles.
+    - Group Withdrawals (`/group-admin/withdrawals`)
+    - Group Deposits (`/group-admin/deposits`)
+    - Withdrawal Approvals (`/group-admin/withdrawals/approvals`)
+
+- When an admin tries to access a resource that they do not have access to, it redirects to the `/groups` page if their token is valid or it redirects to `/login` if the token is invalid.
+- When an authorized user tries to accesss an amin route or route they do not have access to, it redirects to the `/groups` page if their token is valid or redirects to `/login` if the token is invalid.
+- When an unauthorized user tries to access an authorized resource it redirects to the `/login` page.   
 
 #### 4. Project-Wide Refactor for Auth Alignment
 - **Goal:** Update all existing pages, components, and API client interceptors to conform to the new `auth/` architecture.
 - **Key Deliverables:**
   - Wrap API interceptors with automatic JWT token attachment and 401/403 refresh token flows.
-  - Update route guards (e.g., `ProtectedRoute` / middleware) across Ledger, Withdrawals, and Dashboard routes.
+  - Update route guards (`ProtectedRoute` / middleware) across Member and Admin routes based on role permissions.
   - Eliminate redundant state management and unify session lifecycle management.
 
 ---
@@ -56,7 +72,7 @@ This document outlines the operational roadmap and technical blueprint for final
   - Build schemas for:
     - **Ledger Queries:** Date filters, pagination offsets, limits.
     - **Withdrawal Requests:** Amount limits, currency checking, destination account validation, PIN presence.
-    - **Auth Requests:** Credentials format, password strength rules, MFA tokens.
+    - **Auth Requests:** Credentials format, password strength rules.
 
 #### 2. Refactor Controller Files to Use Validators
 - **Goal:** Clean up controller files to ensure separation of concerns—controllers handle request flow and response formatting while validation middleware validates payloads before execution.
@@ -78,7 +94,7 @@ This document outlines the operational roadmap and technical blueprint for final
 - **Key Deliverables:**
   - Implement targeted rate limiting middleware.
   - Apply granular limits based on endpoint sensitivity:
-    - **Strict Rate Limits:** Payout/withdrawal endpoints, transaction PIN confirmation, login/auth attempts (e.g., 5 attempts per minute).
+    - **Strict Rate Limits:** Withdrawal endpoints, transaction PIN confirmation, login/auth attempts (e.g., 5 attempts per minute).
     - **Standard Rate Limits:** Ledger retrieval, general read queries (e.g., 60 requests per minute).
   - Standardize 429 Too Many Requests response format with standard `Retry-After` headers.
 
@@ -105,7 +121,7 @@ This document outlines the operational roadmap and technical blueprint for final
 
 #### 4. Summary & Documentation
 - **Deliverables:**
-  - **Developer Guide:** Documentation on how to run, test v1.
+  - **Developer Guide:** Documentation on how to run and test v1.
   - **Release Notes:** Concise summary of v1 features, fixed bugs, and performance baseline.
 
 ---
@@ -115,11 +131,21 @@ This document outlines the operational roadmap and technical blueprint for final
 | Phase | Component / Module | Key Task | Success Criteria |
 | :--- | :--- | :--- | :--- |
 | **Frontend** | `/ledger` | Dynamic state & API integration | Paginated, filterable transaction history |
-| **Frontend** | `/withdrawals` | Action handlers & payout flows | PIN-verified payout execution with real-time UI feedback |
-| **Frontend** | `auth/` Structure | Folder reorganization & migration | Unified session context and clean route protection |
+| **Frontend** | `/withdrawals` | Action handlers | PIN verification with real-time UI feedback |
+| **Frontend** | `auth/` Structure & Access | Folder reorganization & role-based guards | Granular access control for Public, Member, and Admin routes |
 | **Backend** | Validation Layer | Dedicated validator files | Modular schema validation firing before controllers |
 | **Backend** | Controllers | Refactor payload handling | Lean controllers focused purely on business logic execution |
 | **Backend** | Rate Limiting | Route limiter middleware | Enforced rate caps on sensitive & general API routes |
-| **General** | Testing & QA | Component & flow testing | Zero critical bugs on payout/ledger paths |
+| **General** | Testing & QA | Component & flow testing | Zero critical bugs on ledger paths |
 | **General** | Security Audit | Input, session, & authorization checks | Robust protection against unauthorized access & abuse |
 | **General** | Documentation | Final v1 walkthrough & docs | Up-to-date specs, setup guides, and walkthrough materials |
+
+---
+
+## 🚀 Post-v1 Backlog (v2 Scope)
+
+The following items are deferred to **v2** to keep the initial v1 deployment lean, stable, and focused on core capabilities:
+
+1. **Double-Entry Ledger:** Transition from single-entry logs to balanced double-entry accounting architecture with debit and credit tracking.
+2. **Third-Party Payment Integration:** Direct connection with live payment gateways and financial rails for real-world payouts and collections.
+3. **Transaction Reconciliation & Refund Systems:** Automated handling of transaction failures, webhooks monitoring, and automated refund flows.
