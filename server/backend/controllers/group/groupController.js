@@ -180,89 +180,99 @@ exports.getGroupLedger = async (req, res) => {
 
 exports.groupMembers = async (req, res) => {
     try {
-      const groupId = req.params.group_id;
-      const limit = Math.min(Number(req.query.limit) || 50, 100);
-      const offset = Number(req.query.offset) || 0;
-      const q = req.query.q?.trim() || null;
-  
-      const [members, total] = await Promise.all([
-        groupModel.groupMembers(groupId, { limit, offset, q }),
-        groupModel.groupMemberCount(groupId, q),
-      ]);
-  
-      return res.status(200).json({
-        members,
-        pagination: { limit, offset, total },
-      });
+        const groupId = req.params.group_id;
+        const limit = Math.min(Number(req.query.limit) || 50, 100);
+        const offset = Number(req.query.offset) || 0;
+        const q = req.query.q?.trim() || null;
+
+        const [members, total] = await Promise.all([
+            groupModel.groupMembers(groupId, { limit, offset, q }),
+            groupModel.groupMemberCount(groupId, q),
+        ]);
+
+        return res.status(200).json({
+            members,
+            pagination: { limit, offset, total },
+        });
     } catch (error) {
-      console.error("groupMembers error:", error);
-      return res.status(500).json({ message: error.message });
+        console.error("groupMembers error:", error);
+        return res.status(500).json({ message: error.message });
     }
-  };
+};
 
-  
-// exports.getGroupDepositAccount = async (req, res) => {
-//   try {
-//     const { group_id } = req.params;
 
-//     if (!req.user || !req.user.id) {
-//             return res.status(401).json({ error: 'Unauthorized' });
-//         }
-
-//     const account = await groupModel.getGroupDepositAccount(group_id);
-
-//     if (!account) {
-//       return res.status(404).json({
-//         error: "GROUP_ACCOUNT_NOT_FOUND",
-//         message: "No deposit account has been created for this group",
-//       });
-//     }
-
-//     return res.json({
-//       group_id: account.group_id,
-//       account_number: account.virtual_account_number,
-//       provider_reference: account.provider_ref,
-//       created_at: account.created_at,
-//     });
-//   } catch (err) {
-//     console.error("getGroupDepositAccount error:", err);
-
-//     return res.status(500).json({
-//       error: "FAILED_TO_FETCH_GROUP_ACCOUNT",
-//     });
-//   }
-// };
 
 exports.getGroupDepositAccount = async (req, res) => {
-  try {
-    const { group_id } = req.params;
+    try {
+        const { group_id } = req.params;
 
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({ error: "Unauthorized" });
+        const account = await groupModel.getGroupDepositAccount(group_id);
+
+        if (!account) {
+            return res.status(404).json({
+                error: "GROUP_ACCOUNT_NOT_FOUND",
+                message: "No deposit account has been created for this group",
+            });
+        }
+
+        return res.json({
+            group_id: account.group_id,
+            group_name: account.group_name,
+            account_number: account.virtual_account_number,
+            bank_name: account.bank_name,
+            provider_reference: account.provider_ref,
+            created_at: account.created_at,
+        });
+    } catch (err) {
+        console.error("getGroupDepositAccount error:", err);
+
+        return res.status(500).json({
+            error: "FAILED_TO_FETCH_GROUP_ACCOUNT",
+        });
     }
+};
 
-    const account = await groupModel.getGroupDepositAccount(group_id);
+exports.getGroupActivity = async (req, res) => {
+    try {
+        const { group_id } = req.params;
+        const { limit } = req.query;
 
-    if (!account) {
-      return res.status(404).json({
-        error: "GROUP_ACCOUNT_NOT_FOUND",
-        message: "No deposit account has been created for this group",
-      });
+        if (!group_id) {
+            return res.status(400).json({
+                status: "error",
+                message: "group_id parameter is required"
+            });
+        }
+
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const memberCheck = await pool.query(
+            'SELECT 1 FROM group_membership WHERE user_id = $1 AND group_id = $2 LIMIT 1',
+            [req.user.id, group_id]
+        );
+        if (!memberCheck.rowCount) {
+            return res.status(403).json({ error: 'You are not a member of this group' });
+        }
+
+        const parsedLimit = Math.min(parseInt(limit) || 20, 50);
+
+        const activities = await groupModel.groupActivity(
+            group_id,
+            parsedLimit
+        );
+
+        return res.status(200).json({
+            success: true,
+            data: activities,
+        });
+    } catch (error) {
+        console.error("Error fetching group activity:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to fetch group activity",
+        });
     }
-
-    return res.json({
-      group_id: account.group_id,
-      group_name: account.group_name,
-      account_number: account.virtual_account_number,
-      bank_name: account.bank_name,
-      provider_reference: account.provider_ref,
-      created_at: account.created_at,
-    });
-  } catch (err) {
-    console.error("getGroupDepositAccount error:", err);
-
-    return res.status(500).json({
-      error: "FAILED_TO_FETCH_GROUP_ACCOUNT",
-    });
-  }
 };

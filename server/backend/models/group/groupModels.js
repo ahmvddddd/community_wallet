@@ -101,7 +101,7 @@ exports.groupSummary = async (groupId) => {
   const memberRes = await pool.query(memberQ, [groupId]);
   const member_count = Number(memberRes.rows[0].count);
 
-  const depositQ = `SELECT COUNT(*) FROM deposit WHERE group_id = $1`;
+  const depositQ = `SELECT COUNT(*) FROM deposits WHERE group_id = $1`;
   let deposit_count = 0;
   try {
     const depositRes = await pool.query(depositQ, [groupId]);
@@ -264,28 +264,6 @@ exports.groupMemberCount = async (groupId, q = null) => {
 };
 
 
-// exports.getGroupDepositAccount = async (groupId) => {
-//   const q = `
-//     SELECT
-//       id,
-//       group_id,
-//       virtual_account_number,
-//       provider_ref,
-//       created_at
-//     FROM account
-//     WHERE group_id = $1
-//     LIMIT 1
-//   `;
-
-//   const res = await pool.query(q, [groupId]);
-
-//   if (res.rows.length === 0) {
-//     return null;
-//   }
-
-//   return res.rows[0];
-// };
-
 exports.getGroupDepositAccount = async (groupId) => {
   const q = `
     SELECT
@@ -310,4 +288,57 @@ exports.getGroupDepositAccount = async (groupId) => {
   }
 
   return res.rows[0];
+};
+
+exports.groupActivity = async (groupId, limit = 20) => {
+  const q = `
+    SELECT *
+    FROM (
+      SELECT
+        d.id,
+        'DEPOSIT' AS type,
+        d.status,
+        NULL::bigint AS amount_kobo,
+        'Deposit received' AS title,
+        CONCAT(d.bank_name, ' • ', d.account_number) AS subtitle,
+        d.created_at
+      FROM deposits d
+      WHERE d.group_id = $1
+
+      UNION ALL
+
+      SELECT
+        wr.id,
+        'WITHDRAWAL' AS type,
+        wr.status,
+        wr.amount_kobo,
+        CASE
+          WHEN wr.status = 'PENDING' THEN 'Withdrawal requested'
+          WHEN wr.status = 'APPROVED' THEN 'Withdrawal approved'
+          WHEN wr.status = 'PAID' THEN 'Withdrawal paid'
+          WHEN wr.status = 'DECLINED' THEN 'Withdrawal declined'
+          ELSE 'Withdrawal update'
+        END AS title,
+        CASE
+          WHEN wr.status = 'PENDING' THEN 'Waiting for approval'
+          WHEN wr.status = 'APPROVED' THEN 'Approved, awaiting payment'
+          WHEN wr.status = 'PAID' THEN 'Funds paid out'
+          WHEN wr.status = 'DECLINED' THEN 'Request declined'
+          ELSE 'Status updated'
+        END AS subtitle,
+        wr.created_at
+      FROM withdrawal_request wr
+      WHERE wr.group_id = $1
+    ) activity
+    ORDER BY created_at DESC
+    LIMIT $2
+  `;
+
+  const res = await pool.query(q, [groupId, limit]);
+
+  if (res.rows.length === 0) {
+    return [];
+  }
+
+  return res.rows;
 };
