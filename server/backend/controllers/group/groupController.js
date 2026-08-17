@@ -178,6 +178,53 @@ exports.getGroupLedger = async (req, res) => {
     }
 };
 
+exports.getLedgerEntryDetail = async (req, res) => {
+    try {
+        const { group_id, ledger_id } = req.params;
+
+        if (!group_id || !ledger_id) {
+            return res.status(400).json({
+                status: "error",
+                message: "group_id and ledger_id parameters are required"
+            });
+        }
+
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const memberCheck = await pool.query(
+            'SELECT 1 FROM group_membership WHERE user_id = $1 AND group_id = $2 LIMIT 1',
+            [req.user.id, group_id]
+        );
+
+        if (!memberCheck.rowCount) {
+            return res.status(403).json({ error: 'You are not a member of this group' });
+        }
+
+        const entry = await groupModel.getLedgerEntryById(group_id, ledger_id);
+
+        if (!entry) {
+            return res.status(404).json({
+                status: "error",
+                message: "Ledger entry not found"
+            });
+        }
+
+        return res.status(200).json({
+            status: "success",
+            data: entry
+        });
+
+    } catch (err) {
+        console.error("Error loading ledger entry detail:", err);
+        return res.status(500).json({
+            status: "error",
+            message: "Internal server error"
+        });
+    }
+};
+
 exports.groupMembers = async (req, res) => {
     try {
         const groupId = req.params.group_id;

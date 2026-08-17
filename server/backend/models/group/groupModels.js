@@ -180,6 +180,52 @@ exports.getLedgerEntries = async (groupId, page, pageSize) => {
   return decrypted;
 };
 
+exports.getLedgerEntryById = async (groupId, ledgerId) => {
+  const query = `
+    SELECT 
+      le.id,
+      le.group_id,
+      g.name AS group_name,
+      le.account_id,
+      a.virtual_account_number,
+      le.user_id,
+      u.name AS user_name,
+      u.email AS user_email,
+      le.type,
+      le.amount_kobo,
+      le.currency,
+      le.source,
+      le.reference,
+      le.simulated,
+      le.created_at,
+      le.payment_channel,
+      le.rule_status,
+      le.client_ref
+    FROM ledger_entry le
+    JOIN "group" g ON g.id = le.group_id
+    LEFT JOIN account a ON a.id = le.account_id
+    LEFT JOIN "user" u ON u.id = le.user_id
+    WHERE le.id = $1 AND le.group_id = $2
+  `;
+
+  const { rows } = await pool.query(query, [ledgerId, groupId]);
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  // Decrypt ledger fields and user fields if encrypted
+  let dec = decryptFields(rows[0], LEDGER_SECURE_FIELDS);
+  dec = decryptFields(dec, USER_SECURE_FIELDS);
+
+  if (dec.reference) {
+    dec.reference_masked =
+      dec.reference.substring(0, 4) + "****" + dec.reference.slice(-4);
+  }
+
+  return dec;
+};
+
 exports.getLedgerEntryCount = async (groupId) => {
   const q = `SELECT COUNT(*) FROM ledger_entry WHERE group_id = $1`;
   const { rows } = await pool.query(q, [groupId]);
