@@ -388,3 +388,89 @@ exports.groupActivity = async (groupId, limit = 20) => {
 
   return res.rows;
 };
+
+
+exports.getGroupWithdrawals = async (groupId, page = 1, pageSize = 20) => {
+  const offset = (page - 1) * pageSize;
+
+  const query = `
+    SELECT 
+      wr.id,
+      wr.group_id,
+      wr.amount_kobo,
+      wr.beneficiary,
+      wr.reason,
+      wr.status,
+      wr.requested_by,
+      u.name AS requester_name,
+      u.email AS requester_email,
+      wr.expires_at,
+      wr.created_at
+    FROM withdrawal_request wr
+    JOIN "user" u ON u.id = wr.requested_by
+    WHERE wr.group_id = $1
+    ORDER BY wr.created_at DESC
+    LIMIT $2 OFFSET $3
+  `;
+
+  const { rows } = await pool.query(query, [groupId, pageSize, offset]);
+
+  return rows.map((row) => decryptFields(row, USER_SECURE_FIELDS));
+};
+
+exports.getGroupWithdrawalCount = async (groupId) => {
+  const query = `
+    SELECT COUNT(*)::int AS count 
+    FROM withdrawal_request 
+    WHERE group_id = $1
+  `;
+  const { rows } = await pool.query(query, [groupId]);
+  return rows[0]?.count ?? 0;
+};
+
+
+exports.getGroupWithdrawalById = async (groupId, withdrawalId) => {
+  const query = `
+    SELECT 
+      wr.id,
+      wr.group_id,
+      g.name AS group_name,
+      wr.amount_kobo,
+      wr.beneficiary,
+      wr.reason,
+      wr.status,
+      wr.requested_by,
+      u.name AS requester_name,
+      u.email AS requester_email,
+      g.approvals_required,
+      wr.expires_at,
+      wr.created_at
+    FROM withdrawal_request wr
+    JOIN "user" u ON u.id = wr.requested_by
+    JOIN "group" g ON g.id = wr.group_id
+    WHERE wr.id = $1 AND wr.group_id = $2
+  `;
+
+  const { rows } = await pool.query(query, [withdrawalId, groupId]);
+  if (!rows.length) return null;
+
+  return decryptFields(rows[0], USER_SECURE_FIELDS);
+};
+
+exports.getWithdrawalApprovalHistory = async (withdrawalId) => {
+  const query = `
+    SELECT 
+      a.id AS approval_id,
+      a.approver_user_id,
+      u.name AS approver_name,
+      u.email AS approver_email,
+      a.created_at AS approved_at
+    FROM approval a
+    JOIN "user" u ON u.id = a.approver_user_id
+    WHERE a.withdrawal_id = $1
+    ORDER BY a.created_at ASC
+  `;
+
+  const { rows } = await pool.query(query, [withdrawalId]);
+  return rows.map((row) => decryptFields(row, USER_SECURE_FIELDS));
+};

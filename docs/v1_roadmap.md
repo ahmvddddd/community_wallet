@@ -71,7 +71,7 @@ This document outlines the operational roadmap and technical blueprint for final
   - Create standard validation schema files in `src/validators/`.
   - Build schemas for:
     - **Ledger Queries:** Date filters, pagination offsets, limits.
-    - **Withdrawal Requests:** Amount limits, currency checking, destination account validation, PIN presence.
+    - **Withdrawal Requests:** Amount limits, currency checking, PIN presence.
     - **Auth Requests:** Credentials format, password strength rules.
 
 #### 2. Refactor Controller Files to Use Validators

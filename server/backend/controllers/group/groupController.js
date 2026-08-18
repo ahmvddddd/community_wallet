@@ -323,3 +323,121 @@ exports.getGroupActivity = async (req, res) => {
         });
     }
 };
+
+
+exports.getGroupWithdrawals = async (req, res) => {
+  try {
+    const { group_id } = req.params;
+    const page = parseInt(req.query.page || "1", 10);
+    const pageSize = parseInt(req.query.pageSize || "20", 10);
+
+    if (!group_id) {
+      return res.status(400).json({
+        status: "error",
+        message: "group_id parameter is required",
+      });
+    }
+
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Verify user is a member of the requested group
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM group_membership WHERE user_id = $1 AND group_id = $2 LIMIT 1',
+      [req.user.id, group_id]
+    );
+
+    if (!memberCheck.rowCount) {
+      return res.status(403).json({ error: "You are not a member of this group" });
+    }
+
+    const [withdrawals, total] = await Promise.all([
+      groupModel.getGroupWithdrawals(group_id, page, pageSize),
+      groupModel.getGroupWithdrawalCount(group_id),
+    ]);
+
+    return res.status(200).json({
+      status: "success",
+      data: {
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize),
+        },
+        withdrawals,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching group withdrawals:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+    });
+  }
+};
+
+
+exports.getGroupWithdrawalDetails = async (req, res) => {
+  try {
+    const { group_id, withdrawal_id } = req.params;
+
+    if (!group_id || !withdrawal_id) {
+      return res.status(400).json({
+        status: "error",
+        message: "group_id and withdrawal_id parameters are required",
+      });
+    }
+
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // 1. Verify user is a member of the requested group
+    const memberCheck = await pool.query(
+      'SELECT 1 FROM group_membership WHERE user_id = $1 AND group_id = $2 LIMIT 1',
+      [req.user.id, group_id]
+    );
+
+    if (!memberCheck.rowCount) {
+      return res.status(403).json({ error: "You are not a member of this group" });
+    }
+
+    // 2. Fetch withdrawal details and approval history concurrently
+    const [withdrawal, approvalHistory] = await Promise.all([
+      groupModel.getGroupWithdrawalById(group_id, withdrawal_id),
+      groupModel.getWithdrawalApprovalHistory(withdrawal_id),
+    ]);
+
+    if (!withdrawal) {
+      return res.status(404).json({
+        status: "error",
+        message: "Withdrawal request not found",
+      });
+    }
+
+    // 3. Format payload to include approval counters and history
+    const responseData = {
+      ...withdrawal,
+      approvals: {
+        current: approvalHistory.length,
+        total: withdrawal.approvals_required || 1,
+        history: approvalHistory,
+      },
+    };
+
+    return res.status(200).json({
+      status: "success",
+      data: {
+        withdrawal: responseData,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching group withdrawal details:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+    });
+  }
+};
