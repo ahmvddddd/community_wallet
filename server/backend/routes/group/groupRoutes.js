@@ -11,7 +11,7 @@ router.get('/:group_id/group-summary', ensureAuth, group.groupSum);
 router.get('/:group_id/ledger-snapshot', ensureAuth, group.getGroupLedger);
 router.get('/:group_id/ledgers/:ledger_id', ensureAuth, group.getLedgerEntryDetail);
 router.get('/:group_id/withdrawals', ensureAuth, group.getGroupWithdrawals);
-router.get("/groups/:group_id/withdrawals/:withdrawal_id", ensureAuth, group.getGroupWithdrawalDetails);
+router.get("/:group_id/withdrawal-details/:withdrawal_id", ensureAuth, group.getGroupWithdrawalDetails);
 router.get("/:group_id/members", ensureAuth, group.groupMembers);
 router.get("/:group_id/deposit-account", group.getGroupDepositAccount);
 router.get("/:group_id/activity", ensureAuth, group.getGroupActivity);
