@@ -51,9 +51,9 @@ The first version of Community Wallet will focus only on three core user flows:
 ## Tech Stack
 
 ### **Frontend (Mobile)**
-- Flutter (Dart)
-- Riverpod for state management  
-- Secure Storage for token management  
+- Next.JS (React Typescript)
+- React useState for state management  
+- Cookie and session handling for secure Storage and token management  
 - REST API integration  
 
 ### **Backend**
