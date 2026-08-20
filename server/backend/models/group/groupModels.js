@@ -139,97 +139,6 @@ exports.groupSummary = async (groupId) => {
   };
 };
 
-// exports.getLedgerEntries = async (groupId, page, pageSize) => {
-//   const offset = (page - 1) * pageSize;
-
-//   const query = `
-//     SELECT 
-//       le.id,
-//       le.group_id,
-//       le.account_id,
-//       le.user_id,
-//       le.type,
-//       le.amount_kobo,
-//       le.currency,
-//       le.source,
-//       le.reference,
-//       le.simulated,
-//       le.created_at,
-//       le.payment_channel,
-//       le.rule_status,
-//       le.client_ref
-//     FROM ledger_entry le
-//     WHERE le.group_id = $1
-//     ORDER BY le.created_at DESC
-//     LIMIT $2 OFFSET $3
-//   `;
-
-//   const { rows } = await pool.query(query, [groupId, pageSize, offset]);
-
-//   const decrypted = rows.map(row => {
-//     const dec = decryptFields(row, LEDGER_SECURE_FIELDS);
-
-//     if (dec.reference) {
-//       dec.reference_masked =
-//         dec.reference.substring(0, 4) + "****" + dec.reference.slice(-4);
-//     }
-
-//     return dec;
-//   });
-
-//   return decrypted;
-// };
-
-// exports.getLedgerEntryById = async (groupId, ledgerId) => {
-//   const query = `
-//     SELECT 
-//       le.id,
-//       le.group_id,
-//       g.name AS group_name,
-//       le.account_id,
-//       a.virtual_account_number,
-//       le.user_id,
-//       u.name AS user_name,
-//       u.email AS user_email,
-//       le.type,
-//       le.amount_kobo,
-//       le.currency,
-//       le.source,
-//       le.reference,
-//       le.simulated,
-//       le.created_at,
-//       le.payment_channel,
-//       le.rule_status,
-//       le.client_ref
-//     FROM ledger_entry le
-//     JOIN "group" g ON g.id = le.group_id
-//     LEFT JOIN account a ON a.id = le.account_id
-//     LEFT JOIN "user" u ON u.id = le.user_id
-//     WHERE le.id = $1 AND le.group_id = $2
-//   `;
-
-//   const { rows } = await pool.query(query, [ledgerId, groupId]);
-
-//   if (rows.length === 0) {
-//     return null;
-//   }
-
-//   let dec = decryptFields(rows[0], LEDGER_SECURE_FIELDS);
-//   dec = decryptFields(dec, USER_SECURE_FIELDS);
-
-//   if (dec.reference) {
-//     dec.reference_masked =
-//       dec.reference.substring(0, 4) + "****" + dec.reference.slice(-4);
-//   }
-
-//   return dec;
-// };
-
-// exports.getLedgerEntryCount = async (groupId) => {
-//   const q = `SELECT COUNT(*) FROM ledger_entry WHERE group_id = $1`;
-//   const { rows } = await pool.query(q, [groupId]);
-//   return parseInt(rows[0].count, 10);
-// };
 
 // groupModel.js
 
@@ -571,33 +480,6 @@ exports.getGroupWithdrawalCount = async (groupId) => {
 };
 
 
-// exports.getGroupWithdrawalById = async (groupId, withdrawalId) => {
-//   const query = `
-//     SELECT 
-//       wr.id,
-//       wr.group_id,
-//       g.name AS group_name,
-//       wr.amount_kobo,
-//       wr.beneficiary,
-//       wr.reason,
-//       wr.status,
-//       wr.requested_by,
-//       u.name AS requester_name,
-//       u.email AS requester_email,
-//       g.approvals_required,
-//       wr.expires_at,
-//       wr.created_at
-//     FROM withdrawal_request wr
-//     JOIN "user" u ON u.id = wr.requested_by
-//     JOIN "group" g ON g.id = wr.group_id
-//     WHERE wr.id = $1 AND wr.group_id = $2
-//   `;
-
-//   const { rows } = await pool.query(query, [withdrawalId, groupId]);
-//   if (!rows.length) return null;
-
-//   return decryptFields(rows[0], USER_SECURE_FIELDS);
-// };
 exports.getGroupWithdrawalById = async (groupId, withdrawalId) => {
   const query = `
     SELECT 
@@ -626,23 +508,6 @@ exports.getGroupWithdrawalById = async (groupId, withdrawalId) => {
   return decryptFields(rows[0], USER_SECURE_FIELDS);
 };
 
-// exports.getWithdrawalApprovalHistory = async (withdrawalId) => {
-//   const query = `
-//     SELECT 
-//       a.id AS approval_id,
-//       a.approver_user_id,
-//       u.name AS approver_name,
-//       u.email AS approver_email,
-//       a.created_at AS approved_at
-//     FROM approval a
-//     JOIN "user" u ON u.id = a.approver_user_id
-//     WHERE a.withdrawal_id = $1
-//     ORDER BY a.created_at ASC
-//   `;
-
-//   const { rows } = await pool.query(query, [withdrawalId]);
-//   return rows.map((row) => decryptFields(row, USER_SECURE_FIELDS));
-// };
 exports.getWithdrawalApprovalHistory = async (groupId, withdrawalId) => {
   const query = `
     SELECT 
