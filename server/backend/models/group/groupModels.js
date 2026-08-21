@@ -139,9 +139,6 @@ exports.groupSummary = async (groupId) => {
   };
 };
 
-
-// groupModel.js
-
 exports.isGroupAdmin = async (userId, groupId) => {
   const query = `
     SELECT role_in_group 
@@ -154,7 +151,7 @@ exports.isGroupAdmin = async (userId, groupId) => {
 };
 
 
-const sanitizeLedgerEntry = (entry, isAdmin = false) => {
+  const sanitizeLedgerEntry = (entry, isAdmin = false) => {
   if (!entry) return null;
 
   const sanitized = { ...entry };
@@ -167,7 +164,7 @@ const sanitizeLedgerEntry = (entry, isAdmin = false) => {
         : "****";
 
     if (!isAdmin) {
-      sanitized.reference = sanitized.reference_masked;
+      delete sanitized.reference;
     }
   }
 
@@ -184,6 +181,36 @@ const sanitizeLedgerEntry = (entry, isAdmin = false) => {
         local.length > 2
           ? `${local[0]}***${local.slice(-1)}@${domain}`
           : `***@${domain}`;
+    }
+  }
+
+  return sanitized;
+};
+
+const sanitizeWithdrawal = (withdrawal, isAdmin = false) => {
+  if (!withdrawal) return null;
+
+  const sanitized = { ...withdrawal };
+
+  if (!isAdmin) {
+    
+    if (sanitized.requester_email) {
+      const [local, domain] = sanitized.requester_email.split("@");
+      sanitized.requester_email =
+        local.length > 2
+          ? `${local[0]}***${local.slice(-1)}@${domain}`
+          : `***@${domain}`;
+    }
+
+    if (sanitized.beneficiary && typeof sanitized.beneficiary === "object") {
+      const ben = { ...sanitized.beneficiary };
+      if (ben.account_number && typeof ben.account_number === "string") {
+        ben.account_number =
+          ben.account_number.length > 4
+            ? "****" + ben.account_number.slice(-4)
+            : "****";
+      }
+      sanitized.beneficiary = ben;
     }
   }
 
@@ -441,7 +468,12 @@ exports.groupActivity = async (groupId, limit = 20) => {
 };
 
 
-exports.getGroupWithdrawals = async (groupId, page = 1, pageSize = 20) => {
+exports.getGroupWithdrawals = async (
+  groupId,
+  page = 1,
+  pageSize = 20,
+  requestingUserId = null
+) => {
   const offset = (page - 1) * pageSize;
 
   const query = `
@@ -466,7 +498,15 @@ exports.getGroupWithdrawals = async (groupId, page = 1, pageSize = 20) => {
 
   const { rows } = await pool.query(query, [groupId, pageSize, offset]);
 
-  return rows.map((row) => decryptFields(row, USER_SECURE_FIELDS));
+  let isAdmin = false;
+  if (requestingUserId) {
+    isAdmin = await exports.isGroupAdmin(requestingUserId, groupId);
+  }
+
+  return rows.map((row) => {
+    const dec = decryptFields(row, USER_SECURE_FIELDS);
+    return sanitizeWithdrawal(dec, isAdmin);
+  });
 };
 
 exports.getGroupWithdrawalCount = async (groupId) => {
@@ -480,7 +520,11 @@ exports.getGroupWithdrawalCount = async (groupId) => {
 };
 
 
-exports.getGroupWithdrawalById = async (groupId, withdrawalId) => {
+exports.getGroupWithdrawalById = async (
+  groupId,
+  withdrawalId,
+  requestingUserId = null
+) => {
   const query = `
     SELECT 
       wr.id,
@@ -505,7 +549,15 @@ exports.getGroupWithdrawalById = async (groupId, withdrawalId) => {
   const { rows } = await pool.query(query, [withdrawalId, groupId]);
   if (!rows.length) return null;
 
-  return decryptFields(rows[0], USER_SECURE_FIELDS);
+  const dec = decryptFields(rows[0], USER_SECURE_FIELDS);
+
+  // Check admin rights for data minimization
+  let isAdmin = false;
+  if (requestingUserId) {
+    isAdmin = await exports.isGroupAdmin(requestingUserId, groupId);
+  }
+
+  return sanitizeWithdrawal(dec, isAdmin);
 };
 
 exports.getWithdrawalApprovalHistory = async (groupId, withdrawalId) => {

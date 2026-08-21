@@ -124,8 +124,6 @@ exports.groupSum = async (req, res) => {
 };
 
 
-// groupController.js
-
 exports.getGroupLedger = async (req, res) => {
   try {
     const { group_id } = req.params;
@@ -181,50 +179,56 @@ exports.getGroupLedger = async (req, res) => {
 };
 
 exports.getLedgerEntryDetail = async (req, res) => {
-    try {
-        const { group_id, ledger_id } = req.params;
+  try {
+    const { group_id, ledger_id } = req.params;
 
-        if (!group_id || !ledger_id) {
-            return res.status(400).json({
-                status: "error",
-                message: "group_id and ledger_id parameters are required"
-            });
-        }
-
-        if (!req.user || !req.user.id) {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
-
-        const memberCheck = await pool.query(
-            'SELECT 1 FROM group_membership WHERE user_id = $1 AND group_id = $2 LIMIT 1',
-            [req.user.id, group_id]
-        );
-
-        if (!memberCheck.rowCount) {
-            return res.status(403).json({ error: 'You are not a member of this group' });
-        }
-
-        const entry = await groupModel.getLedgerEntryById(group_id, ledger_id);
-
-        if (!entry) {
-            return res.status(404).json({
-                status: "error",
-                message: "Ledger entry not found"
-            });
-        }
-
-        return res.status(200).json({
-            status: "success",
-            data: entry
-        });
-
-    } catch (err) {
-        console.error("Error loading ledger entry detail:", err);
-        return res.status(500).json({
-            status: "error",
-            message: "Internal server error"
-        });
+    if (!group_id || !ledger_id) {
+      return res.status(400).json({
+        status: "error",
+        message: "group_id and ledger_id parameters are required",
+      });
     }
+
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const memberCheck = await pool.query(
+      "SELECT 1 FROM group_membership WHERE user_id = $1 AND group_id = $2 LIMIT 1",
+      [req.user.id, group_id]
+    );
+
+    if (!memberCheck.rowCount) {
+      return res
+        .status(403)
+        .json({ error: "You are not a member of this group" });
+    }
+
+    // UPDATED: Pass req.user.id as the 3rd argument to trigger role-based field sanitization
+    const entry = await groupModel.getLedgerEntryById(
+      group_id,
+      ledger_id,
+      req.user.id
+    );
+
+    if (!entry) {
+      return res.status(404).json({
+        status: "error",
+        message: "Ledger entry not found",
+      });
+    }
+
+    return res.status(200).json({
+      status: "success",
+      data: entry,
+    });
+  } catch (err) {
+    console.error("Error loading ledger entry detail:", err);
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+    });
+  }
 };
 
 exports.groupMembers = async (req, res) => {
@@ -345,16 +349,19 @@ exports.getGroupWithdrawals = async (req, res) => {
     }
 
     const memberCheck = await pool.query(
-      'SELECT 1 FROM group_membership WHERE user_id = $1 AND group_id = $2 LIMIT 1',
+      "SELECT 1 FROM group_membership WHERE user_id = $1 AND group_id = $2 LIMIT 1",
       [req.user.id, group_id]
     );
 
     if (!memberCheck.rowCount) {
-      return res.status(403).json({ error: "You are not a member of this group" });
+      return res
+        .status(403)
+        .json({ error: "You are not a member of this group" });
     }
 
+    // UPDATED: Pass req.user.id as the 4th argument to trigger role-based withdrawal masking
     const [withdrawals, total] = await Promise.all([
-      groupModel.getGroupWithdrawals(group_id, page, pageSize),
+      groupModel.getGroupWithdrawals(group_id, page, pageSize, req.user.id),
       groupModel.getGroupWithdrawalCount(group_id),
     ]);
 
@@ -379,8 +386,6 @@ exports.getGroupWithdrawals = async (req, res) => {
   }
 };
 
-
-
 exports.getGroupWithdrawalDetails = async (req, res) => {
   try {
     const { group_id, withdrawal_id } = req.params;
@@ -399,11 +404,13 @@ exports.getGroupWithdrawalDetails = async (req, res) => {
     const role = await groupModel.getGroupMemberRole(group_id, req.user.id);
 
     if (!role) {
-      return res.status(403).json({ error: "You are not a member of this group" });
+      return res
+        .status(403)
+        .json({ error: "You are not a member of this group" });
     }
 
     const [withdrawal, approvalHistory] = await Promise.all([
-      groupModel.getGroupWithdrawalById(group_id, withdrawal_id),
+      groupModel.getGroupWithdrawalById(group_id, withdrawal_id, req.user.id),
       groupModel.getWithdrawalApprovalHistory(group_id, withdrawal_id),
     ]);
 
@@ -415,15 +422,18 @@ exports.getGroupWithdrawalDetails = async (req, res) => {
     }
 
     const isAdmin = role === "OWNER" || role === "TREASURER";
+
     const hasApproved = approvalHistory.some(
-      (item) => item.approver_user_id === req.user.id
+      (item) => String(item.approver_user_id) === String(req.user.id)
     );
+
+    const isPending = withdrawal.status?.toUpperCase() === "PENDING";
 
     const responseData = {
       ...withdrawal,
       user_permissions: {
         role,
-        can_approve: isAdmin && withdrawal.status === "PENDING" && !hasApproved,
+        can_approve: isAdmin && isPending && !hasApproved,
         has_already_approved: hasApproved,
         is_admin: isAdmin,
       },
